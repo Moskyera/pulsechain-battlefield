@@ -8,6 +8,7 @@ import { runtime } from '@/lib/sim/runtime';
 import { field } from '@/lib/sim/field';
 import { FIELD_HALF_Z } from '@/lib/sim/layout';
 import { Terrain } from './Terrain';
+import { Scars } from './Scars';
 import { Emplacements } from './Emplacements';
 import { Bases } from './Bases';
 import { Armies } from './Armies';
@@ -106,6 +107,7 @@ export function Scene({ lowPower }: { lowPower: boolean }) {
 
       <ShakeGroup>
         <Terrain lowPower={lowPower} />
+        <Scars lowPower={lowPower} />
         <Bases lowPower={lowPower} />
         <Emplacements lowPower={lowPower} />
         <Armies lowPower={lowPower} />

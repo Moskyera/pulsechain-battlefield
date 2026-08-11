@@ -4,7 +4,7 @@ import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { AdditiveBlending, Color, Object3D, Vector3, type InstancedMesh } from 'three';
 import { field, swapQueue } from '@/lib/sim/field';
-import { runtime } from '@/lib/sim/runtime';
+import { recordBlast, runtime } from '@/lib/sim/runtime';
 import { TIER_PROFILE, type ImpactEvent } from '@/lib/sim/combat';
 import { rocketGeometry, tracerGeometry } from '@/lib/sim/geometry';
 import { audio } from '@/lib/audio/engine';
@@ -101,6 +101,9 @@ export function Combat({ lowPower }: { lowPower: boolean }) {
 
     for (const impact of impacts) {
       audio.impact(impact.tier, 0.55 + Math.min(1, impact.usd / 25_000));
+      // Hand the detonation to whoever outlives the fireball: the infantry it
+      // catches, and the ground it scars.
+      recordBlast(impact.x, impact.z, impact.radius, impact.side);
     }
 
     /* -- 4. Projectiles: tracers for infantry, rockets for the rest ---- */

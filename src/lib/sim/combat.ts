@@ -119,9 +119,14 @@ export interface Explosion {
 
 export interface ImpactEvent {
   tier: UnitTier;
+  /** The side that FIRED this round. Its casualties land on the other side. */
   side: Side;
   usd: number;
   shake: number;
+  /** Where it landed, so the infantry and the ground can react to it. */
+  x: number;
+  z: number;
+  radius: number;
 }
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
@@ -277,7 +282,15 @@ export class CombatSystem {
     this.shake = Math.min(2.5, this.shake + profile.shake);
     if (p.tier === 'nuke') this.flash = Math.min(1, this.flash + 0.85);
 
-    impacts.push({ tier: p.tier, side: p.side, usd: p.usd, shake: profile.shake });
+    impacts.push({
+      tier: p.tier,
+      side: p.side,
+      usd: p.usd,
+      shake: profile.shake,
+      x: p.ex,
+      z: p.ez,
+      radius: profile.blast,
+    });
   }
 
   /** Current world position of a projectile along its ballistic arc. */

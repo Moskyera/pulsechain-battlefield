@@ -4,8 +4,9 @@ import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { AdditiveBlending, Object3D, type InstancedMesh } from 'three';
 import { field } from '@/lib/sim/field';
-import { runtime } from '@/lib/sim/runtime';
+import { drainBlasts, runtime } from '@/lib/sim/runtime';
 import { soldierGeometry } from '@/lib/sim/geometry';
+import type { Side } from '@/lib/data/types';
 import { troopTexture } from '@/lib/sim/textures';
 import { targetKey, useBattleStore } from '@/store/battle';
 import { hashSigned, hashUnit, hashUnitSalted } from '@/lib/util/hash';
@@ -33,10 +34,34 @@ import { COLORS, FIELD_HALF_Z, GREEN_BASE_X, RED_BASE_X, frontLineToX } from '@/
  *  Real trades still arrive as bright tracers, rockets, armour and blasts —
  *  see Combat.tsx. If it detonates, it was real.
  * ─────────────────────────────────────────────────────────────────────────
+ *
+ * CASUALTIES AND REINFORCEMENTS
+ *
+ * How many soldiers a side fields is, as before, its real liquidity. What is
+ * new is that the number no longer changes by silent teleport: when the count
+ * drops the missing men fall where they stood and lie there, and when it rises
+ * the new ones march up from their own base and take position.
+ *
+ * Men are also knocked down by real detonations landing near them — the blast
+ * is a real trade (Combat.tsx records it), the choreography around it is
+ * dramatisation, exactly like the ambient fire above. A knocked-down man is
+ * replaced a few seconds later if his side's liquidity still supports him, so
+ * the standing count always converges back on the real number.
  */
 
 export const MAX_UNITS_HIGH = 28;
 export const MAX_UNITS_LOW = 16;
+
+/** Corpses render in the same instanced mesh as the living: no extra draw call. */
+const CORPSE_CAPACITY = 22;
+/** Topple animation, then how long a body lies there before it sinks away. */
+const FALL_TIME = 0.75;
+const CORPSE_LIFE = 15;
+const CORPSE_SINK = 2;
+/** A man knocked down is off the field this long before a replacement starts. */
+const REPLACE_DELAY = 2.4;
+/** How long reinforcements take to march from their base to their post. */
+const ARRIVE_TIME = 2.6;
 
 /** Seconds between one soldier's bursts (before per-soldier variation). */
 const FIRE_INTERVAL_MIN = 1.6;
@@ -123,6 +148,74 @@ function useSoldierTable() {
   };
 }
 
+/** Where a man is in his tour: marching up, holding the line, or down. */
+type SlotPhase = 'out' | 'arriving' | 'standing';
+
+interface SoldierSlot {
+  phase: SlotPhase;
+  /** `runtime.elapsed` when the current phase began. */
+  since: number;
+  /** Earliest time a replacement may start marching up. */
+  readyAt: number;
+}
+
+interface Corpse {
+  x: number;
+  z: number;
+  yaw: number;
+  fellAt: number;
+  /** Which way he toppled, so a line of dead men doesn't lie in lockstep. */
+  roll: number;
+}
+
+interface SideState {
+  slots: SoldierSlot[];
+  corpses: Corpse[];
+  corpseHead: number;
+  blastCursor: number;
+  /** Live positions, kept so a blast can find who was standing where. */
+  posX: Float32Array;
+  posZ: Float32Array;
+}
+
+function makeSideState(capacity: number): SideState {
+  return {
+    slots: Array.from({ length: capacity }, () => ({
+      phase: 'out' as SlotPhase,
+      since: 0,
+      readyAt: 0,
+    })),
+    corpses: Array.from({ length: CORPSE_CAPACITY }, () => ({
+      x: 0,
+      z: 0,
+      yaw: 0,
+      fellAt: -999,
+      roll: 1,
+    })),
+    corpseHead: 0,
+    blastCursor: 0,
+    posX: new Float32Array(capacity),
+    posZ: new Float32Array(capacity),
+  };
+}
+
+/** Lay a man down where he stood. */
+function fell(state: SideState, index: number, x: number, z: number, yaw: number, time: number): void {
+  const slot = state.slots[index];
+  if (slot.phase === 'out') return;
+  slot.phase = 'out';
+  slot.since = time;
+  slot.readyAt = time + REPLACE_DELAY;
+
+  const corpse = state.corpses[state.corpseHead % CORPSE_CAPACITY];
+  state.corpseHead++;
+  corpse.x = x;
+  corpse.z = z;
+  corpse.yaw = yaw;
+  corpse.fellAt = time;
+  corpse.roll = index % 2 === 0 ? 1 : -1;
+}
+
 export function Armies({ lowPower }: { lowPower: boolean }) {
   const greenRef = useRef<InstancedMesh>(null);
   const redRef = useRef<InstancedMesh>(null);
@@ -140,6 +233,20 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
   const greenTable = useSoldierTable();
   const redTable = useSoldierTable();
 
+  const greenState = useMemo(() => makeSideState(capacity), [capacity]);
+  const redState = useMemo(() => makeSideState(capacity), [capacity]);
+
+  // A new battlefield is a new war: nobody carries over.
+  const lastSeed = useRef(seed);
+  if (lastSeed.current !== seed) {
+    lastSeed.current = seed;
+    for (const s of [greenState, redState]) {
+      for (const slot of s.slots) slot.phase = 'out';
+      for (const c of s.corpses) c.fellAt = -999;
+      s.blastCursor = runtime.blastSeq;
+    }
+  }
+
   useFrame((_, rawDelta) => {
     const dt = Math.min(rawDelta, 0.05);
     runtime.elapsed += dt;
@@ -150,6 +257,10 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
     const greenCount = field.hasData ? Math.min(field.greenUnits, capacity) : 0;
     const redCount = field.hasData ? Math.min(field.redUnits, capacity) : 0;
 
+    // Which way the line is being driven, from -1 (this side is being pushed
+    // back) to +1 (this side is pushing). Drives posture, pace and bounding.
+    const drive = runtime.frontLineVelocity * 6;
+
     paintSide({
       mesh: greenRef.current,
       tracers: greenTracers.current,
@@ -159,6 +270,9 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
       baseX: GREEN_BASE_X,
       frontX,
       table: greenTable(seed + ':g', greenCount),
+      state: greenState,
+      side: 'buy',
+      advance: Math.max(-1, Math.min(1, drive)),
       dummy,
       time: t,
       intense,
@@ -173,6 +287,9 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
       baseX: RED_BASE_X,
       frontX,
       table: redTable(seed + ':r', redCount),
+      state: redState,
+      side: 'sell',
+      advance: Math.max(-1, Math.min(1, -drive)),
       dummy,
       time: t,
       intense,
@@ -196,7 +313,7 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
     <group>
       <instancedMesh
         ref={greenRef}
-        args={[undefined, undefined, capacity]}
+        args={[undefined, undefined, capacity + CORPSE_CAPACITY]}
         frustumCulled={false}
         castShadow={!lowPower}
         receiveShadow={!lowPower}
@@ -207,7 +324,7 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
 
       <instancedMesh
         ref={redRef}
-        args={[undefined, undefined, capacity]}
+        args={[undefined, undefined, capacity + CORPSE_CAPACITY]}
         frustumCulled={false}
         castShadow={!lowPower}
         receiveShadow={!lowPower}
@@ -251,17 +368,75 @@ interface PaintArgs {
   frontX: number;
   /** Per-soldier constants, built once per (seed, count). */
   table: SoldierConst[];
+  /** Who is standing, who is marching up, who is lying where. */
+  state: SideState;
+  side: Side;
+  /** -1 being driven back, +1 driving forward. */
+  advance: number;
   dummy: Object3D;
   time: number;
   intense: boolean;
 }
 
 function paintSide(a: PaintArgs): void {
-  const { mesh, tracers, flashes, count, dir, baseX, frontX, table, dummy, time, intense } = a;
+  const { mesh, tracers, flashes, count, dir, baseX, frontX, table, state, side, advance, dummy, time, intense } = a;
   if (!mesh) return;
 
-  mesh.count = count;
+  /* ---- casualties from real detonations landing on our ground ---- */
+  state.blastCursor = drainBlasts(state.blastCursor, (blast) => {
+    // The side that fired is not the side that bleeds.
+    if (blast.side === side) return;
+    const reach = blast.radius * 1.7;
+    // A bigger round takes more men down, but never guts the whole line.
+    let allowance = Math.max(1, Math.round(blast.radius / 2.6));
+    for (let i = 0; i < count && allowance > 0; i++) {
+      if (state.slots[i].phase !== 'standing') continue;
+      const dx = state.posX[i] - blast.x;
+      const dz = state.posZ[i] - blast.z;
+      if (dx * dx + dz * dz > reach * reach) continue;
+      fell(state, i, state.posX[i], state.posZ[i], dir === -1 ? 0 : Math.PI, time);
+      allowance--;
+    }
+  });
+
+  /* ---- the roll call: who should be on the field right now ---- */
+  for (let i = 0; i < state.slots.length; i++) {
+    const slot = state.slots[i];
+    const wanted = i < count;
+
+    if (wanted && slot.phase === 'out' && time >= slot.readyAt) {
+      slot.phase = 'arriving';
+      slot.since = time;
+    } else if (wanted && slot.phase === 'arriving' && time - slot.since >= ARRIVE_TIME) {
+      slot.phase = 'standing';
+      slot.since = time;
+    } else if (!wanted && slot.phase !== 'out') {
+      // The side's liquidity no longer supports him: he falls where he stood.
+      fell(state, i, state.posX[i], state.posZ[i], dir === -1 ? 0 : Math.PI, time);
+    }
+  }
+
+  let drawn = 0;
+
+  /* ---- the dead, laid out where they fell ---- */
+  for (const corpse of state.corpses) {
+    if (corpse.fellAt < 0) continue;
+    const age = time - corpse.fellAt;
+    if (age > CORPSE_LIFE) continue;
+
+    // Topple over the first moments, lie still, then sink out of sight.
+    const topple = Math.min(1, age / FALL_TIME);
+    const eased = topple * topple * (3 - 2 * topple);
+    const sinking = Math.max(0, age - (CORPSE_LIFE - CORPSE_SINK)) / CORPSE_SINK;
+    dummy.position.set(corpse.x, -0.05 - sinking * 1.4, corpse.z);
+    dummy.rotation.set(0, corpse.yaw, eased * (Math.PI / 2) * corpse.roll);
+    dummy.scale.setScalar(1.42);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(drawn++, dummy.matrix);
+  }
+
   if (count === 0) {
+    mesh.count = drawn;
     mesh.instanceMatrix.needsUpdate = true;
     if (tracers) tracers.count = 0;
     if (flashes) flashes.count = 0;
@@ -281,18 +456,24 @@ function paintSide(a: PaintArgs): void {
 
   for (let i = 0; i < count; i++) {
     const c = table[i];
-    if (!c) continue;
+    const slot = state.slots[i];
+    if (!c || !slot || slot.phase === 'out') continue;
 
     /* ---- this soldier's own post, and his own wander around it ---- */
     // Every soldier is trying to push. He works his way forward on his own
     // clock, then falls back and goes again — so the line is always straining
     // toward the enemy instead of standing still.
     const pushPhase = ((time + c.pushOffset * c.pushPeriod) % c.pushPeriod) / c.pushPeriod;
-    // Slow advance over most of the cycle, quick fall-back at the end.
-    const advance =
-      pushPhase < 0.75 ? pushPhase / 0.75 : 1 - (pushPhase - 0.75) / 0.25;
+    // Slow surge over most of the cycle, quick fall-back at the end.
+    const surge = pushPhase < 0.75 ? pushPhase / 0.75 : 1 - (pushPhase - 0.75) / 0.25;
 
-    const postX = frontX + dir * (3 + c.postDepth * band) - dir * c.pushReach * advance;
+    // A side that is winning presses forward and bounds: odd-numbered men rush
+    // while the others hold. A side being driven back gives ground instead.
+    const bounding = advance > 0 ? (i % 2 === 0 ? 1.3 : 0.55) : 1;
+    const press = c.pushReach * surge * (0.45 + 0.55 * Math.max(0, advance)) * bounding;
+    const giveGround = Math.max(0, -advance) * 3.2;
+
+    const postX = frontX + dir * (3 + c.postDepth * band) - dir * press + dir * giveGround;
 
     // Two independent slow oscillations, each with its own rate and phase, so
     // no two soldiers ever trace the same path or share a rhythm.
@@ -300,8 +481,9 @@ function paintSide(a: PaintArgs): void {
     const wz = Math.cos(time * c.wanderRateZ + c.wanderPhZ) * c.reach;
 
     // Marching gait: |sin| gives two footfalls per cycle. Each soldier steps at
-    // his own tempo.
-    const gait = time * gaitSpeed * c.gaitRate + c.gaitPhase;
+    // his own tempo, and the whole line quickens when the front is moving.
+    const urgency = 1 + Math.abs(advance) * 0.7;
+    const gait = time * gaitSpeed * c.gaitRate * urgency + c.gaitPhase;
     const lift = Math.abs(Math.sin(gait)) * gaitLift;
     const stride = Math.sin(gait) * (intense ? 0.34 : 0.2);
 
@@ -309,9 +491,21 @@ function paintSide(a: PaintArgs): void {
     // the two armies: green holds everything to its left, red everything to its
     // right, and the push above can strain against it but never through it.
     const rawX = postX + wx - dir * stride;
-    const x = dir === -1 ? Math.min(rawX, frontX - 1.6) : Math.max(rawX, frontX + 1.6);
-    const z = Math.max(-FIELD_HALF_Z, Math.min(FIELD_HALF_Z, c.postZ + wz));
+    let x = dir === -1 ? Math.min(rawX, frontX - 1.6) : Math.max(rawX, frontX + 1.6);
+    let z = Math.max(-FIELD_HALF_Z, Math.min(FIELD_HALF_Z, c.postZ + wz));
     const scale = c.scale;
+
+    // Reinforcements march up from their own base and fall in at the post.
+    if (slot.phase === 'arriving') {
+      const p = Math.min(1, (time - slot.since) / ARRIVE_TIME);
+      const eased = p * p * (3 - 2 * p);
+      x = baseX + (x - baseX) * eased;
+      z = c.postZ * 0.25 + (z - c.postZ * 0.25) * eased;
+    }
+
+    // Remembered so a blast can work out who was standing where.
+    state.posX[i] = x;
+    state.posZ[i] = z;
 
     /* ---- ambient burst timing (cosmetic; see the file header) ---- */
     const cycle = ((time + c.fireOffset * c.fireInterval) % c.fireInterval) / c.fireInterval;
@@ -324,13 +518,16 @@ function paintSide(a: PaintArgs): void {
     const yaw = (dir === -1 ? 0 : Math.PI) + c.yawJitter + scan;
     const recoil = firing ? Math.sin(burstT * Math.PI) * 0.07 : 0;
 
+    // Leaning into the push, or leaning back while giving ground.
+    const lean = advance * 0.13;
     dummy.position.set(x, lift, z);
-    dummy.rotation.set(0, yaw, Math.sin(gait * 0.5) * (intense ? 0.05 : 0.025) - recoil);
+    dummy.rotation.set(0, yaw, Math.sin(gait * 0.5) * (intense ? 0.05 : 0.025) - recoil + lean);
     dummy.scale.setScalar(scale);
     dummy.updateMatrix();
-    mesh.setMatrixAt(i, dummy.matrix);
+    mesh.setMatrixAt(drawn++, dummy.matrix);
 
-    if (!firing) continue;
+    // A man still marching up is not yet in the fight.
+    if (!firing || slot.phase !== 'standing') continue;
 
     // Muzzle sits at the end of the rifle, which the model holds out front.
     const muzzleX = x + faceDir * 0.95 * scale;
@@ -362,6 +559,7 @@ function paintSide(a: PaintArgs): void {
     }
   }
 
+  mesh.count = drawn;
   mesh.instanceMatrix.needsUpdate = true;
   if (tracers) {
     tracers.count = tracerN;
