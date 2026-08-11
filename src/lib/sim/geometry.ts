@@ -149,6 +149,7 @@ export const KIT_SELL: TeamKit = {
 };
 
 const soldierCache = new Map<string, BufferGeometry>();
+const legCache = new Map<string, BufferGeometry>();
 const tankCache = new Map<string, BufferGeometry>();
 const launcherCacheByTeam = new Map<string, BufferGeometry>();
 let rocketCache: BufferGeometry | null = null;
@@ -167,11 +168,8 @@ export function soldierGeometry(kit: TeamKit): BufferGeometry {
   if (cached) return cached;
 
   const parts: BufferGeometry[] = [
-    // Boots and legs, stance slightly open with the lead leg forward.
-    boxPart(BOOT, 0.3, 0.12, 0.18, 0.1, 0.06, -0.15),
-    boxPart(BOOT, 0.3, 0.12, 0.18, -0.06, 0.06, 0.16),
-    limb(kit.fatigueDark, 0.1, 0.62, 0.06, 0.42, -0.15, { z: 0.06 }),
-    limb(kit.fatigueDark, 0.1, 0.62, -0.03, 0.42, 0.16, { z: -0.04 }),
+    // Legs are no longer part of the body: they are their own instanced mesh so
+    // they can actually swing. See legGeometry.
 
     // Hips + belt
     boxPart(kit.fatigue, 0.26, 0.18, 0.42, 0, 0.8, 0),
@@ -217,6 +215,30 @@ export function soldierGeometry(kit: TeamKit): BufferGeometry {
 
   const geo = merge(parts);
   soldierCache.set(kit.key, geo);
+  return geo;
+}
+
+/**
+ * One leg, hinged at the hip.
+ *
+ * Split out of the body so it can swing. While the legs were baked into the
+ * merged soldier the whole man could only slide across the ground with his feet
+ * frozen, which is what made the army look like it was on castors. Now each leg
+ * is its own instance, pivoting where the hip is, and the swing is driven by
+ * how far the man has actually travelled.
+ */
+export function legGeometry(kit: TeamKit): BufferGeometry {
+  const cached = legCache.get(kit.key);
+  if (cached) return cached;
+
+  const thigh = new CylinderGeometry(0.105, 0.09, 0.66, 7);
+  thigh.translate(0, -0.33, 0);
+
+  const boot = new BoxGeometry(0.3, 0.13, 0.19);
+  boot.translate(0.05, -0.72, 0);
+
+  const geo = merge([paint(thigh, kit.fatigueDark), paint(boot, BOOT)]);
+  legCache.set(kit.key, geo);
   return geo;
 }
 

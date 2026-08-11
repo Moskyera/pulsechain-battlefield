@@ -5,7 +5,7 @@ import { useFrame } from '@react-three/fiber';
 import { AdditiveBlending, Object3D, type InstancedMesh } from 'three';
 import { field } from '@/lib/sim/field';
 import { drainBlasts, runtime } from '@/lib/sim/runtime';
-import { KIT_BUY, KIT_SELL, soldierGeometry } from '@/lib/sim/geometry';
+import { KIT_BUY, KIT_SELL, legGeometry, soldierGeometry } from '@/lib/sim/geometry';
 import type { Side } from '@/lib/data/types';
 import { troopTexture } from '@/lib/sim/textures';
 import { targetKey, useBattleStore } from '@/store/battle';
@@ -60,8 +60,23 @@ const CORPSE_LIFE = 15;
 const CORPSE_SINK = 2;
 /** A man knocked down is off the field this long before a replacement starts. */
 const REPLACE_DELAY = 2.4;
-/** How long reinforcements take to march from their base to their post. */
-const ARRIVE_TIME = 2.6;
+/** Longest a reinforcement may take to reach his post before he counts as in. */
+const ARRIVE_TIME = 9;
+
+/**
+ * Locomotion constants.
+ *
+ * A soldier holds his ground until his post has drifted further than his own
+ * slack, then runs to it and stops again. That hysteresis is what produces
+ * move-and-hold instead of a field of men gliding about continuously, and it
+ * means a still market leaves the line genuinely still.
+ */
+const RUN_SPEED = 7.4;
+const MARCH_SPEED = 3.1;
+/** World units covered per stride. Sets the cadence against real distance. */
+const STRIDE = 1.15;
+/** Radians a leg swings at full running speed. */
+const SWING_MAX = 0.72;
 
 /** Seconds between one soldier's bursts (before per-soldier variation). */
 const FIRE_INTERVAL_MIN = 1.6;
@@ -98,6 +113,10 @@ interface SoldierConst {
   fireInterval: number;
   fireOffset: number;
   scale: number;
+  /** How far his post may drift before he bothers to get up and move. */
+  slack: number;
+  /** His own running pace, so a rush is ragged rather than a chorus line. */
+  pace: number;
 }
 
 function buildSoldierTable(seed: string, count: number): SoldierConst[] {
@@ -131,6 +150,8 @@ function buildSoldierTable(seed: string, count: number): SoldierConst[] {
       fireInterval: FIRE_INTERVAL_MIN + hashUnit(s + 'fi') * FIRE_INTERVAL_SPAN,
       fireOffset: hashUnit(s + 'fo'),
       scale: 1.42 + hashUnitSalted(s, 11) * 0.16,
+      slack: 1.4 + hashUnit(s + 'sl') * 2.4,
+      pace: 0.82 + hashUnit(s + 'pc') * 0.36,
     });
   }
   return table;
@@ -176,6 +197,18 @@ interface SideState {
   /** Live positions, kept so a blast can find who was standing where. */
   posX: Float32Array;
   posZ: Float32Array;
+  /**
+   * Locomotion. A soldier is not teleported onto his post every frame any more:
+   * he runs to it and then stands, so his speed is something that emerges from
+   * the field moving rather than a number we invent.
+   */
+  moving: Uint8Array;
+  /** Stride phase, advanced by distance covered so the feet match the ground. */
+  gait: Float32Array;
+  /** Smoothed facing, so nobody snaps round on the spot. */
+  yaw: Float32Array;
+  /** Metres per second right now, for leg swing, lean and bob. */
+  speed: Float32Array;
 }
 
 function makeSideState(capacity: number): SideState {
@@ -196,6 +229,10 @@ function makeSideState(capacity: number): SideState {
     blastCursor: 0,
     posX: new Float32Array(capacity),
     posZ: new Float32Array(capacity),
+    moving: new Uint8Array(capacity),
+    gait: new Float32Array(capacity),
+    yaw: new Float32Array(capacity),
+    speed: new Float32Array(capacity),
   };
 }
 
@@ -219,6 +256,10 @@ function fell(state: SideState, index: number, x: number, z: number, yaw: number
 export function Armies({ lowPower }: { lowPower: boolean }) {
   const greenRef = useRef<InstancedMesh>(null);
   const redRef = useRef<InstancedMesh>(null);
+  const greenLegL = useRef<InstancedMesh>(null);
+  const greenLegR = useRef<InstancedMesh>(null);
+  const redLegL = useRef<InstancedMesh>(null);
+  const redLegR = useRef<InstancedMesh>(null);
   const greenTracers = useRef<InstancedMesh>(null);
   const redTracers = useRef<InstancedMesh>(null);
   const greenFlashes = useRef<InstancedMesh>(null);
@@ -227,6 +268,8 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
   const dummy = useMemo(() => new Object3D(), []);
   const greenSoldier = useMemo(() => soldierGeometry(KIT_BUY), []);
   const redSoldier = useMemo(() => soldierGeometry(KIT_SELL), []);
+  const greenLeg = useMemo(() => legGeometry(KIT_BUY), []);
+  const redLeg = useMemo(() => legGeometry(KIT_SELL), []);
   const cloth = useMemo(() => troopTexture(), []);
   const capacity = lowPower ? MAX_UNITS_LOW : MAX_UNITS_HIGH;
 
@@ -264,6 +307,8 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
 
     paintSide({
       mesh: greenRef.current,
+      legsLeft: greenLegL.current,
+      legsRight: greenLegR.current,
       tracers: greenTracers.current,
       flashes: greenFlashes.current,
       count: greenCount,
@@ -276,11 +321,14 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
       advance: Math.max(-1, Math.min(1, drive)),
       dummy,
       time: t,
+      dt,
       intense,
     });
 
     paintSide({
       mesh: redRef.current,
+      legsLeft: redLegL.current,
+      legsRight: redLegR.current,
       tracers: redTracers.current,
       flashes: redFlashes.current,
       count: redCount,
@@ -293,6 +341,7 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
       advance: Math.max(-1, Math.min(1, -drive)),
       dummy,
       time: t,
+      dt,
       intense,
     });
   });
@@ -324,6 +373,17 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
         {troopMaterial(COLORS.buy)}
       </instancedMesh>
 
+      {/* Legs. Same instance count as the bodies above them, one mesh per leg,
+          so a whole army walks for two extra draw calls. */}
+      <instancedMesh ref={greenLegL} args={[undefined, undefined, capacity + CORPSE_CAPACITY]} frustumCulled={false} castShadow={!lowPower}>
+        <primitive object={greenLeg} attach="geometry" />
+        {troopMaterial(COLORS.buy)}
+      </instancedMesh>
+      <instancedMesh ref={greenLegR} args={[undefined, undefined, capacity + CORPSE_CAPACITY]} frustumCulled={false} castShadow={!lowPower}>
+        <primitive object={greenLeg} attach="geometry" />
+        {troopMaterial(COLORS.buy)}
+      </instancedMesh>
+
       <instancedMesh
         ref={redRef}
         args={[undefined, undefined, capacity + CORPSE_CAPACITY]}
@@ -332,6 +392,15 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
         receiveShadow={!lowPower}
       >
         <primitive object={redSoldier} attach="geometry" />
+        {troopMaterial(COLORS.sell)}
+      </instancedMesh>
+
+      <instancedMesh ref={redLegL} args={[undefined, undefined, capacity + CORPSE_CAPACITY]} frustumCulled={false} castShadow={!lowPower}>
+        <primitive object={redLeg} attach="geometry" />
+        {troopMaterial(COLORS.sell)}
+      </instancedMesh>
+      <instancedMesh ref={redLegR} args={[undefined, undefined, capacity + CORPSE_CAPACITY]} frustumCulled={false} castShadow={!lowPower}>
+        <primitive object={redLeg} attach="geometry" />
         {troopMaterial(COLORS.sell)}
       </instancedMesh>
 
@@ -361,6 +430,9 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
 
 interface PaintArgs {
   mesh: InstancedMesh | null;
+  /** Legs live in their own meshes so they can swing independently. */
+  legsLeft: InstancedMesh | null;
+  legsRight: InstancedMesh | null;
   tracers: InstancedMesh | null;
   flashes: InstancedMesh | null;
   count: number;
@@ -377,12 +449,15 @@ interface PaintArgs {
   advance: number;
   dummy: Object3D;
   time: number;
+  dt: number;
   intense: boolean;
 }
 
 function paintSide(a: PaintArgs): void {
-  const { mesh, tracers, flashes, count, dir, baseX, frontX, table, state, side, advance, dummy, time, intense } = a;
+  const { mesh, legsLeft, legsRight, tracers, flashes, count, dir, baseX, frontX, table, state, side, advance, dummy, time, dt, intense } = a;
   if (!mesh) return;
+
+  let legDrawn = 0;
 
   /* ---- casualties from real detonations landing on our ground ---- */
   state.blastCursor = drainBlasts(state.blastCursor, (blast) => {
@@ -435,11 +510,32 @@ function paintSide(a: PaintArgs): void {
     dummy.scale.setScalar(1.42);
     dummy.updateMatrix();
     mesh.setMatrixAt(drawn++, dummy.matrix);
+
+    // His legs go down with him, splayed rather than at attention.
+    const hipY = -0.05 - sinking * 1.4 + 0.8 * 1.42 * (1 - eased);
+    const sinYaw = Math.sin(corpse.yaw);
+    const cosYaw = Math.cos(corpse.yaw);
+    for (let leg = 0; leg < 2; leg++) {
+      const legMesh = leg === 0 ? legsLeft : legsRight;
+      if (!legMesh) continue;
+      const offZ = (leg === 0 ? -0.155 : 0.155) * 1.42;
+      dummy.position.set(corpse.x + sinYaw * offZ, hipY, corpse.z + cosYaw * offZ);
+      dummy.rotation.set(
+        0,
+        corpse.yaw,
+        eased * (Math.PI / 2) * corpse.roll + (leg === 0 ? 0.3 : -0.18) * eased,
+      );
+      dummy.scale.setScalar(1.42);
+      dummy.updateMatrix();
+      legMesh.setMatrixAt(legDrawn, dummy.matrix);
+    }
+    legDrawn++;
   }
 
   if (count === 0) {
     mesh.count = drawn;
     mesh.instanceMatrix.needsUpdate = true;
+    commitLegs(legsLeft, legsRight, legDrawn);
     if (tracers) tracers.count = 0;
     if (flashes) flashes.count = 0;
     return;
@@ -450,7 +546,6 @@ function paintSide(a: PaintArgs): void {
   // The army occupies the whole of its own ground, front line back to base,
   // rather than huddling in a strip behind the line.
   const band = Math.max(6, Math.abs(baseX - frontX) - 4);
-  const gaitSpeed = intense ? 4.6 : 2.4;
   const gaitLift = intense ? 0.16 : 0.1;
 
   let tracerN = 0;
@@ -460,6 +555,14 @@ function paintSide(a: PaintArgs): void {
     const c = table[i];
     const slot = state.slots[i];
     if (!c || !slot || slot.phase === 'out') continue;
+
+    const justArrived = slot.phase === 'arriving' && state.speed[i] === 0 && time - slot.since < 0.05;
+    if (justArrived) {
+      // Reinforcements step off from their own base and run in from there.
+      state.posX[i] = baseX;
+      state.posZ[i] = c.postZ * 0.3;
+      state.yaw[i] = dir === -1 ? 0 : Math.PI;
+    }
 
     /* ---- this soldier's own post, and his own wander around it ---- */
     // Every soldier is trying to push. He works his way forward on his own
@@ -482,51 +585,106 @@ function paintSide(a: PaintArgs): void {
     const wx = Math.sin(time * c.wanderRateX + c.wanderPhX) * c.reach;
     const wz = Math.cos(time * c.wanderRateZ + c.wanderPhZ) * c.reach;
 
-    // Marching gait: |sin| gives two footfalls per cycle. Each soldier steps at
-    // his own tempo, and the whole line quickens when the front is moving.
-    const urgency = 1 + Math.abs(advance) * 0.7;
-    const gait = time * gaitSpeed * c.gaitRate * urgency + c.gaitPhase;
-    const lift = Math.abs(Math.sin(gait)) * gaitLift;
-    const stride = Math.sin(gait) * (intense ? 0.34 : 0.2);
-
     // Nobody crosses the line of contact. The front line is the wall between
     // the two armies: green holds everything to its left, red everything to its
     // right, and the push above can strain against it but never through it.
-    const rawX = postX + wx - dir * stride;
-    let x = dir === -1 ? Math.min(rawX, frontX - 1.6) : Math.max(rawX, frontX + 1.6);
-    let z = Math.max(-FIELD_HALF_Z, Math.min(FIELD_HALF_Z, c.postZ + wz));
+    const rawX = postX + wx;
+    const wantX = dir === -1 ? Math.min(rawX, frontX - 1.6) : Math.max(rawX, frontX + 1.6);
+    const wantZ = Math.max(-FIELD_HALF_Z, Math.min(FIELD_HALF_Z, c.postZ + wz));
     const scale = c.scale;
 
-    // Reinforcements march up from their own base and fall in at the post.
-    if (slot.phase === 'arriving') {
-      const p = Math.min(1, (time - slot.since) / ARRIVE_TIME);
-      const eased = p * p * (3 - 2 * p);
-      x = baseX + (x - baseX) * eased;
-      z = c.postZ * 0.25 + (z - c.postZ * 0.25) * eased;
+    /* ---- getting there on his own two feet ---- */
+    let x = state.posX[i];
+    let z = state.posZ[i];
+    const dx = wantX - x;
+    const dz = wantZ - z;
+    const gap = Math.hypot(dx, dz);
+
+    // Hysteresis: he holds his ground until his post has drifted past his own
+    // slack, then runs until he is on it. Without it every man drifts every
+    // frame and the whole army looks like it is on castors.
+    if (state.moving[i] === 0 && gap > c.slack) state.moving[i] = 1;
+    else if (state.moving[i] === 1 && gap < 0.35) state.moving[i] = 0;
+
+    // A man coming up from the base is committed to the run whatever his slack.
+    const marching = slot.phase === 'arriving';
+    if (marching && gap > 0.6) state.moving[i] = 1;
+
+    let covered = 0;
+    if (state.moving[i] === 1 && gap > 0.0001) {
+      const hurry = Math.abs(advance) > 0.25 || gap > 8 || marching;
+      const pace = (hurry ? RUN_SPEED : MARCH_SPEED) * c.pace * (intense ? 1.15 : 1);
+      covered = Math.min(gap, pace * dt);
+      x += (dx / gap) * covered;
+      z += (dz / gap) * covered;
     }
 
-    // Remembered so a blast can work out who was standing where.
     state.posX[i] = x;
     state.posZ[i] = z;
 
+    const speedNow = dt > 0 ? covered / dt : 0;
+    // Smoothed, so the legs cannot flicker between running and standing.
+    state.speed[i] += (speedNow - state.speed[i]) * Math.min(1, dt * 9);
+    const speed = state.speed[i];
+
+    if (marching && gap < 1.2) {
+      slot.phase = 'standing';
+      slot.since = time;
+    }
+
+    // Stride phase advances with GROUND COVERED rather than with the clock, so
+    // the cadence always matches the speed and the feet stop when he stops.
+    state.gait[i] = (state.gait[i] + (covered / (STRIDE * scale)) * Math.PI) % (Math.PI * 2);
+    const gait = state.gait[i];
+    const moveMix = Math.min(1, speed / RUN_SPEED);
+    const lift = Math.abs(Math.sin(gait)) * gaitLift * (0.35 + moveMix);
+
     /* ---- ambient burst timing (cosmetic; see the file header) ---- */
     const cycle = ((time + c.fireOffset * c.fireInterval) % c.fireInterval) / c.fireInterval;
-    const firing = cycle < BURST_FRACTION;
+    // Nobody fires on the run.
+    const firing = cycle < BURST_FRACTION && speed < 1.2 && slot.phase === 'standing';
     const burstT = firing ? cycle / BURST_FRACTION : 0;
 
-    // A firing soldier squares up to the enemy and takes the recoil; otherwise
-    // he scans his sector.
+    // Facing: he runs where he is going and fights where the enemy is, easing
+    // between the two instead of snapping round on the spot.
+    const enemyYaw = (dir === -1 ? 0 : Math.PI) + c.yawJitter;
     const scan = firing ? 0 : Math.sin(time * 0.45 + c.wanderPhX) * 0.22;
-    const yaw = (dir === -1 ? 0 : Math.PI) + c.yawJitter + scan;
+    let wantYaw = enemyYaw + scan;
+    if (speed > 1.4 && gap > 0.0001) {
+      wantYaw = Math.atan2(-dz / gap, dx / gap);
+    }
+    let turn = wantYaw - state.yaw[i];
+    while (turn > Math.PI) turn -= Math.PI * 2;
+    while (turn < -Math.PI) turn += Math.PI * 2;
+    state.yaw[i] += turn * Math.min(1, dt * 7);
+    const yaw = state.yaw[i];
+
     const recoil = firing ? Math.sin(burstT * Math.PI) * 0.07 : 0;
 
-    // Leaning into the push, or leaning back while giving ground.
-    const lean = advance * 0.13;
+    // Leaning into the run, and into the push or away from it while holding.
+    const lean = moveMix * 0.22 + (1 - moveMix) * advance * 0.13;
     dummy.position.set(x, lift, z);
-    dummy.rotation.set(0, yaw, Math.sin(gait * 0.5) * (intense ? 0.05 : 0.025) - recoil + lean);
+    dummy.rotation.set(0, yaw, Math.sin(gait) * 0.03 - recoil + lean);
     dummy.scale.setScalar(scale);
     dummy.updateMatrix();
     mesh.setMatrixAt(drawn++, dummy.matrix);
+
+    /* ---- legs, hinged at the hip and swinging opposite each other ---- */
+    const swing = Math.sin(gait) * SWING_MAX * (0.1 + moveMix * 0.9);
+    const hipY = lift + 0.8 * scale;
+    const sinYaw = Math.sin(yaw);
+    const cosYaw = Math.cos(yaw);
+    for (let leg = 0; leg < 2; leg++) {
+      const legMesh = leg === 0 ? legsLeft : legsRight;
+      if (!legMesh) continue;
+      const offZ = (leg === 0 ? -0.155 : 0.155) * scale;
+      dummy.position.set(x + sinYaw * offZ, hipY, z + cosYaw * offZ);
+      dummy.rotation.set(0, yaw, leg === 0 ? swing : -swing);
+      dummy.scale.setScalar(scale);
+      dummy.updateMatrix();
+      legMesh.setMatrixAt(legDrawn, dummy.matrix);
+    }
+    legDrawn++;
 
     // A man still marching up is not yet in the fight.
     if (!firing || slot.phase !== 'standing') continue;
@@ -563,6 +721,7 @@ function paintSide(a: PaintArgs): void {
 
   mesh.count = drawn;
   mesh.instanceMatrix.needsUpdate = true;
+  commitLegs(legsLeft, legsRight, legDrawn);
   if (tracers) {
     tracers.count = tracerN;
     tracers.instanceMatrix.needsUpdate = true;
@@ -570,5 +729,13 @@ function paintSide(a: PaintArgs): void {
   if (flashes) {
     flashes.count = flashN;
     flashes.instanceMatrix.needsUpdate = true;
+  }
+}
+
+function commitLegs(left: InstancedMesh | null, right: InstancedMesh | null, count: number): void {
+  for (const mesh of [left, right]) {
+    if (!mesh) continue;
+    mesh.count = count;
+    mesh.instanceMatrix.needsUpdate = true;
   }
 }
