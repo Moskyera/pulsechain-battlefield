@@ -137,6 +137,11 @@ export const PRESET_TOKENS: PresetToken[] = [
     address: '0x2fa878Ab3F87CC1C9737Fc071108F904c0B0C95d',
     note: 'Incentive token',
   },
+  {
+    symbol: 'PRVX',
+    address: '0xF6f8Db0aBa00007681F8fAF16A0FDa1c9B030b11',
+    note: 'ProveX · deepest book is PRVX/USDC on PulseX',
+  },
 ];
 
 /**
@@ -160,6 +165,7 @@ export const WAR_PRESETS: { id: string; label: string; note: string; tokens: Pre
       { symbol: 'PLSX', address: '0x95B303987A60C71504D99Aa1b13B4DA07b0790ab', note: 'PulseX' },
       { symbol: 'INC', address: '0x2fa878Ab3F87CC1C9737Fc071108F904c0B0C95d', note: 'Incentive' },
       { symbol: 'PCOCK', address: '0xc10A4Ed9b4042222d69ff0B374eddd47ed90fC1F', note: 'Peacock' },
+      { symbol: 'PRVX', address: '0xF6f8Db0aBa00007681F8fAF16A0FDa1c9B030b11', note: 'ProveX' },
       { symbol: 'PLS', address: WPLS, note: 'Wrapped PLS' },
     ],
   },
@@ -200,6 +206,11 @@ export const PRESET_PAIRS: PresetPair[] = [
     label: 'WPLS / DAI',
     address: '0xE56043671df55dE5CDf8459710433C10324DE0aE',
     note: 'PulseX · stable pair',
+  },
+  {
+    label: 'PRVX / USDC',
+    address: '0x7f681a5aD615238357bA148C281E2EAEfd2dE55A',
+    note: 'PulseX · ProveX deepest book',
   },
 ];
 
