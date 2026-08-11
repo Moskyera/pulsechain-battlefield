@@ -1046,6 +1046,31 @@ button {
   transition: left 420ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* The track is written every frame from the simulation itself, so the easing
+   that used to smooth out React updates would now only add lag on top of the
+   spring the front line already runs on. */
+.force-track.live .force-fill,
+.force-track.live .force-marker {
+  transition: none;
+}
+
+/* Five-minute money flow: the pressure pushing the line, not the line. Dashed
+   so it never reads as the front line itself, which is the solid marker. */
+.force-flow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  transform: translateX(-1px);
+  background: repeating-linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.85) 0 3px,
+    transparent 3px 6px
+  );
+  transition: left 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
 .force-legend {
   display: flex;
   justify-content: space-between;
