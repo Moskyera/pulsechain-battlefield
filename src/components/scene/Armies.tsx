@@ -5,7 +5,7 @@ import { useFrame } from '@react-three/fiber';
 import { AdditiveBlending, Object3D, type InstancedMesh } from 'three';
 import { field } from '@/lib/sim/field';
 import { drainBlasts, runtime } from '@/lib/sim/runtime';
-import { soldierGeometry } from '@/lib/sim/geometry';
+import { KIT_BUY, KIT_SELL, soldierGeometry } from '@/lib/sim/geometry';
 import type { Side } from '@/lib/data/types';
 import { troopTexture } from '@/lib/sim/textures';
 import { targetKey, useBattleStore } from '@/store/battle';
@@ -225,7 +225,8 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
   const redFlashes = useRef<InstancedMesh>(null);
 
   const dummy = useMemo(() => new Object3D(), []);
-  const soldier = useMemo(() => soldierGeometry(), []);
+  const greenSoldier = useMemo(() => soldierGeometry(KIT_BUY), []);
+  const redSoldier = useMemo(() => soldierGeometry(KIT_SELL), []);
   const cloth = useMemo(() => troopTexture(), []);
   const capacity = lowPower ? MAX_UNITS_LOW : MAX_UNITS_HIGH;
 
@@ -296,14 +297,15 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
     });
   });
 
+  // Uniforms now come from the geometry's baked colours and the side is told by
+  // the helmet band and armband, so the emissive wash that used to turn every
+  // man into a solid block of team colour is down to a faint rim.
   const troopMaterial = (color: string) => (
     <meshStandardMaterial
       vertexColors
       map={cloth}
       emissive={color}
-      // Enough to say which army, not enough to drown the baked detail: at 0.22
-      // the fatigues, webbing, skin and gunmetal all read as one flat colour.
-      emissiveIntensity={0.15}
+      emissiveIntensity={0.035}
       roughness={0.82}
       metalness={0.08}
     />
@@ -318,7 +320,7 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
         castShadow={!lowPower}
         receiveShadow={!lowPower}
       >
-        <primitive object={soldier} attach="geometry" />
+        <primitive object={greenSoldier} attach="geometry" />
         {troopMaterial(COLORS.buy)}
       </instancedMesh>
 
@@ -329,7 +331,7 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
         castShadow={!lowPower}
         receiveShadow={!lowPower}
       >
-        <primitive object={soldier} attach="geometry" />
+        <primitive object={redSoldier} attach="geometry" />
         {troopMaterial(COLORS.sell)}
       </instancedMesh>
 

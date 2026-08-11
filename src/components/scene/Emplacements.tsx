@@ -5,7 +5,7 @@ import { useFrame } from '@react-three/fiber';
 import { Object3D, type InstancedMesh } from 'three';
 import { field } from '@/lib/sim/field';
 import { runtime } from '@/lib/sim/runtime';
-import { launcherGeometry, tankGeometry } from '@/lib/sim/geometry';
+import { KIT_BUY, KIT_SELL, launcherGeometry, tankGeometry } from '@/lib/sim/geometry';
 import { armourTexture } from '@/lib/sim/textures';
 import { hashSigned, hashUnit } from '@/lib/util/hash';
 import { BATTERY, LAUNCHER_INDICES, TANK_INDICES, batteryPlacement } from '@/lib/sim/battery';
@@ -60,8 +60,10 @@ export function Emplacements({ lowPower }: { lowPower: boolean }) {
   const sellMarkers = useRef<InstancedMesh>(null);
 
   const dummy = useMemo(() => new Object3D(), []);
-  const tank = useMemo(() => tankGeometry(), []);
-  const launcher = useMemo(() => launcherGeometry(), []);
+  const buyTank = useMemo(() => tankGeometry(KIT_BUY), []);
+  const sellTank = useMemo(() => tankGeometry(KIT_SELL), []);
+  const buyLauncher = useMemo(() => launcherGeometry(KIT_BUY), []);
+  const sellLauncher = useMemo(() => launcherGeometry(KIT_SELL), []);
   const plating = useMemo(() => armourTexture(), []);
   const buyJitter = useMemo(() => batteryJitter('emp-g'), []);
   const sellJitter = useMemo(() => batteryJitter('emp-r'), []);
@@ -102,7 +104,7 @@ export function Emplacements({ lowPower }: { lowPower: boolean }) {
       vertexColors
       map={plating}
       emissive={color}
-      emissiveIntensity={0.12}
+      emissiveIntensity={0.03}
       roughness={0.78}
       metalness={0.28}
     />
@@ -111,20 +113,20 @@ export function Emplacements({ lowPower }: { lowPower: boolean }) {
   return (
     <group>
       <instancedMesh ref={buyTanks} args={[undefined, undefined, TANKS_PER_SIDE]} frustumCulled={false} castShadow={!lowPower}>
-        <primitive object={tank} attach="geometry" />
+        <primitive object={buyTank} attach="geometry" />
         {armourMaterial(COLORS.buy)}
       </instancedMesh>
       <instancedMesh ref={sellTanks} args={[undefined, undefined, TANKS_PER_SIDE]} frustumCulled={false} castShadow={!lowPower}>
-        <primitive object={tank} attach="geometry" />
+        <primitive object={sellTank} attach="geometry" />
         {armourMaterial(COLORS.sell)}
       </instancedMesh>
 
       <instancedMesh ref={buyLaunchers} args={[undefined, undefined, LAUNCHERS_PER_SIDE]} frustumCulled={false} castShadow={!lowPower}>
-        <primitive object={launcher} attach="geometry" />
+        <primitive object={buyLauncher} attach="geometry" />
         {armourMaterial(COLORS.buy)}
       </instancedMesh>
       <instancedMesh ref={sellLaunchers} args={[undefined, undefined, LAUNCHERS_PER_SIDE]} frustumCulled={false} castShadow={!lowPower}>
-        <primitive object={launcher} attach="geometry" />
+        <primitive object={sellLauncher} attach="geometry" />
         {armourMaterial(COLORS.sell)}
       </instancedMesh>
 

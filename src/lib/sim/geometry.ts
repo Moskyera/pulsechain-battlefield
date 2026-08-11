@@ -92,18 +92,65 @@ function merge(parts: BufferGeometry[]): BufferGeometry {
   return merged;
 }
 
-/* Palette — deliberately muted so the emissive team glow reads on top. */
+/* Palette. Real uniform tones: the team colour is carried by a few small,
+   deliberately bright markers rather than by dyeing the whole man. */
 const SKIN = '#c08a5e';
-const FATIGUE = '#4f5b3c';
-const FATIGUE_DARK = '#3c4630';
-const ARMOUR = '#2b3327';
-const HELMET = '#39422f';
 const BOOT = '#1b1b18';
 const GUNMETAL = '#23262a';
-const PACK = '#57603f';
 
-let soldierCache: BufferGeometry | null = null;
-let tankCache: BufferGeometry | null = null;
+/**
+ * One army's kit.
+ *
+ * Both sides used to wear the same olive and were told apart only by an
+ * emissive wash that turned them into solid green or solid red silhouettes,
+ * which is what made them read as plastic toys. Now they wear genuinely
+ * different uniforms and carry a helmet band and an armband in their colour:
+ * identifiable at a glance, still soldiers up close.
+ *
+ * The markers are baked into the vertex colours, so each side simply gets its
+ * own cached geometry and the draw-call count does not move.
+ */
+export interface TeamKit {
+  key: string;
+  fatigue: string;
+  fatigueDark: string;
+  helmet: string;
+  armour: string;
+  pack: string;
+  /** Hull and turret tone for this side's armour. */
+  hull: string;
+  turret: string;
+  /** The bright identifying colour: bands, stripes, pennants. */
+  marker: string;
+}
+
+export const KIT_BUY: TeamKit = {
+  key: 'buy',
+  fatigue: '#4f5b3c',
+  fatigueDark: '#3c4630',
+  helmet: '#39422f',
+  armour: '#2b3327',
+  pack: '#57603f',
+  hull: '#333b33',
+  turret: '#3d463c',
+  marker: '#3ff08a',
+};
+
+export const KIT_SELL: TeamKit = {
+  key: 'sell',
+  fatigue: '#6b5b47',
+  fatigueDark: '#514537',
+  helmet: '#57493a',
+  armour: '#3a3028',
+  pack: '#6f6049',
+  hull: '#3b3532',
+  turret: '#46403b',
+  marker: '#ff5566',
+};
+
+const soldierCache = new Map<string, BufferGeometry>();
+const tankCache = new Map<string, BufferGeometry>();
+const launcherCacheByTeam = new Map<string, BufferGeometry>();
 let rocketCache: BufferGeometry | null = null;
 let tracerCache: BufferGeometry | null = null;
 
@@ -115,45 +162,51 @@ let tracerCache: BufferGeometry | null = null;
  * across the chest. Roughly 900 vertices — irrelevant at 40 instances, and it
  * is the difference between "figures" and "soldiers".
  */
-export function soldierGeometry(): BufferGeometry {
-  if (soldierCache) return soldierCache;
+export function soldierGeometry(kit: TeamKit): BufferGeometry {
+  const cached = soldierCache.get(kit.key);
+  if (cached) return cached;
 
   const parts: BufferGeometry[] = [
     // Boots and legs, stance slightly open with the lead leg forward.
     boxPart(BOOT, 0.3, 0.12, 0.18, 0.1, 0.06, -0.15),
     boxPart(BOOT, 0.3, 0.12, 0.18, -0.06, 0.06, 0.16),
-    limb(FATIGUE_DARK, 0.1, 0.62, 0.06, 0.42, -0.15, { z: 0.06 }),
-    limb(FATIGUE_DARK, 0.1, 0.62, -0.03, 0.42, 0.16, { z: -0.04 }),
+    limb(kit.fatigueDark, 0.1, 0.62, 0.06, 0.42, -0.15, { z: 0.06 }),
+    limb(kit.fatigueDark, 0.1, 0.62, -0.03, 0.42, 0.16, { z: -0.04 }),
 
     // Hips + belt
-    boxPart(FATIGUE, 0.26, 0.18, 0.42, 0, 0.8, 0),
+    boxPart(kit.fatigue, 0.26, 0.18, 0.42, 0, 0.8, 0),
     boxPart(BOOT, 0.28, 0.06, 0.44, 0, 0.88, 0),
 
     // Torso, then body armour over it
-    boxPart(FATIGUE, 0.28, 0.5, 0.44, 0, 1.15, 0),
-    boxPart(ARMOUR, 0.31, 0.36, 0.47, 0, 1.16, 0),
+    boxPart(kit.fatigue, 0.28, 0.5, 0.44, 0, 1.15, 0),
+    boxPart(kit.armour, 0.31, 0.36, 0.47, 0, 1.16, 0),
     // pouches
-    boxPart(ARMOUR, 0.1, 0.12, 0.12, 0.16, 1.02, -0.12),
-    boxPart(ARMOUR, 0.1, 0.12, 0.12, 0.16, 1.02, 0.12),
+    boxPart(kit.armour, 0.1, 0.12, 0.12, 0.16, 1.02, -0.12),
+    boxPart(kit.armour, 0.1, 0.12, 0.12, 0.16, 1.02, 0.12),
 
     // Pack on the back (behind = -X)
-    boxPart(PACK, 0.2, 0.4, 0.36, -0.24, 1.16, 0),
+    boxPart(kit.pack, 0.2, 0.4, 0.36, -0.24, 1.16, 0),
 
     // Shoulders
-    ball(FATIGUE, 0.12, 0, 1.36, -0.24),
-    ball(FATIGUE, 0.12, 0, 1.36, 0.24),
+    ball(kit.fatigue, 0.12, 0, 1.36, -0.24),
+    ball(kit.fatigue, 0.12, 0, 1.36, 0.24),
 
     // Upper arms angled forward, forearms bringing the rifle across the chest
-    limb(FATIGUE, 0.082, 0.34, 0.08, 1.2, -0.26, { z: -0.35 }),
-    limb(FATIGUE, 0.082, 0.34, 0.1, 1.2, 0.26, { z: -0.45 }),
+    limb(kit.fatigue, 0.082, 0.34, 0.08, 1.2, -0.26, { z: -0.35 }),
+    limb(kit.fatigue, 0.082, 0.34, 0.1, 1.2, 0.26, { z: -0.45 }),
     limb(SKIN, 0.072, 0.28, 0.27, 1.06, -0.2, { z: Math.PI / 2.1 }),
     limb(SKIN, 0.072, 0.26, 0.3, 1.12, 0.18, { z: Math.PI / 2.1 }),
 
     // Neck + head + helmet
     limb(SKIN, 0.07, 0.1, 0, 1.46, 0),
     ball(SKIN, 0.125, 0.01, 1.58, 0),
-    ball(HELMET, 0.152, 0.01, 1.6, 0, 0.78),
-    boxPart(HELMET, 0.1, 0.04, 0.26, 0.13, 1.58, 0),
+    ball(kit.helmet, 0.152, 0.01, 1.6, 0, 0.78),
+    boxPart(kit.helmet, 0.1, 0.04, 0.26, 0.13, 1.58, 0),
+
+    // Field signs. Small, bright and in the two places you actually look from
+    // a high camera: a band round the helmet and a strip on the shoulder.
+    boxPart(kit.marker, 0.3, 0.045, 0.3, 0.01, 1.655, 0),
+    boxPart(kit.marker, 0.13, 0.16, 0.05, 0.02, 1.3, -0.245),
 
     // Rifle: receiver, barrel, magazine, stock — held out front
     boxPart(GUNMETAL, 0.44, 0.075, 0.075, 0.26, 1.12, 0.02),
@@ -162,25 +215,28 @@ export function soldierGeometry(): BufferGeometry {
     boxPart(GUNMETAL, 0.2, 0.09, 0.06, -0.02, 1.14, 0.02),
   ];
 
-  soldierCache = merge(parts);
-  return soldierCache;
+  const geo = merge(parts);
+  soldierCache.set(kit.key, geo);
+  return geo;
 }
 
 /**
  * A tank: tracks with road wheels, sloped hull, turret and gun, facing +X.
  * Deployed for real trades at or above the tank cutoff.
  */
-export function tankGeometry(): BufferGeometry {
-  if (tankCache) return tankCache;
+export function tankGeometry(kit: TeamKit): BufferGeometry {
+  const cached = tankCache.get(kit.key);
+  if (cached) return cached;
 
   // Readability first. Against tan dirt an olive tank is a lump, so the hull is
   // dark gunmetal for contrast, the turret sits high and clear of the deck, and
   // the gun is long and thick enough to be obvious from the default camera —
   // the barrel is what makes a shape read as "tank" at a glance.
-  const HULL = '#33383f';
-  const TURRET = '#3d434b';
+  const HULL = kit.hull;
+  const TURRET = kit.turret;
   const STEEL = '#22262b';
   const TRACK = '#141619';
+  const PACK = kit.pack;
 
   const barrel = new CylinderGeometry(0.11, 0.125, 2.0, 10);
   barrel.rotateZ(-Math.PI / 2);
@@ -264,10 +320,17 @@ export function tankGeometry(): BufferGeometry {
     // Tow hooks on the glacis
     boxPart(STEEL, 0.14, 0.08, 0.08, 1.08, 0.5, -0.24),
     boxPart(STEEL, 0.14, 0.08, 0.08, 1.08, 0.5, 0.24),
+
+    // Recognition stripes: turret flanks and a panel on the roof, so the side
+    // is obvious both from across the field and from the default camera above.
+    boxPart(kit.marker, 0.72, 0.1, 0.04, -0.12, 1.24, -0.48),
+    boxPart(kit.marker, 0.72, 0.1, 0.04, -0.12, 1.24, 0.48),
+    boxPart(kit.marker, 0.34, 0.03, 0.34, -0.05, 1.4, -0.22),
   ];
 
-  tankCache = merge(parts);
-  return tankCache;
+  const geo = merge(parts);
+  tankCache.set(kit.key, geo);
+  return geo;
 }
 
 /**
@@ -322,15 +385,15 @@ export function rocketGeometry(): BufferGeometry {
   return rocketCache;
 }
 
-let launcherCache: BufferGeometry | null = null;
-
 /**
  * A truck-mounted rocket launcher, facing +X — the artillery that sits dug in
  * behind the line waiting on a big trade.
  */
-export function launcherGeometry(): BufferGeometry {
-  if (launcherCache) return launcherCache;
+export function launcherGeometry(kit: TeamKit): BufferGeometry {
+  const cached = launcherCacheByTeam.get(kit.key);
+  if (cached) return cached;
 
+  const PACK = kit.pack;
   const wheels: BufferGeometry[] = [];
   for (const x of [-0.7, 0.05, 0.72]) {
     for (const z of [-0.5, 0.5]) {
@@ -381,10 +444,15 @@ export function launcherGeometry(): BufferGeometry {
     // Reload crate on the bed and a cab step
     boxPart(PACK, 0.42, 0.22, 0.7, 0.25, 0.66, 0),
     boxPart('#15181c', 0.24, 0.05, 0.5, 0.72, 0.5, 0),
+
+    // Recognition stripes down the cab and across the bed.
+    boxPart(kit.marker, 0.06, 0.34, 0.96, 0.36, 0.9, 0),
+    boxPart(kit.marker, 0.3, 0.03, 0.5, -0.1, 0.6, 0),
   ];
 
-  launcherCache = merge(parts);
-  return launcherCache;
+  const geo = merge(parts);
+  launcherCacheByTeam.set(kit.key, geo);
+  return geo;
 }
 
 /** A rifle tracer: a bead stretched along its flight path. */

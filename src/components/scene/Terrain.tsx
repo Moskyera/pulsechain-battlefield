@@ -2,14 +2,7 @@
 
 import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import {
-  BoxGeometry,
-  BufferAttribute,
-  Color,
-  EdgesGeometry,
-  PlaneGeometry,
-  type Mesh,
-} from 'three';
+import { BufferAttribute, Color, PlaneGeometry, type Mesh } from 'three';
 import { runtime } from '@/lib/sim/runtime';
 import { COLORS, FIELD_HALF_X, FIELD_HALF_Z, frontLineToX } from '@/lib/sim/layout';
 import { groundTexture } from '@/lib/sim/textures';
@@ -33,10 +26,33 @@ export function Terrain({ lowPower }: { lowPower: boolean }) {
   const greenRef = useRef<Mesh>(null);
   const redRef = useRef<Mesh>(null);
 
-  const boundary = useMemo(
-    () => new EdgesGeometry(new BoxGeometry(FIELD_HALF_X * 2, 0.02, FIELD_HALF_Z * 2)),
-    [],
-  );
+  /**
+   * Held ground, as an area of influence rather than a painted rectangle.
+   *
+   * The old version was a flat slab of colour with a hard straight edge on all
+   * four sides, which read as a board game overlay sitting on top of the world.
+   * This one carries its own per-vertex alpha, strongest through the middle and
+   * falling away to nothing at every edge, so the colour bleeds into the dirt
+   * and the only crisp line left on the field is the one the armies are
+   * actually fighting over.
+   */
+  const influence = useMemo(() => {
+    const g = new PlaneGeometry(1, FIELD_HALF_Z * 2, 24, 12);
+    const pos = g.attributes.position;
+    const rgba = new Float32Array(pos.count * 4);
+    for (let i = 0; i < pos.count; i++) {
+      // Plane spans -0.5..0.5 on X and half-depth on Y before it is rotated.
+      const u = Math.abs(pos.getX(i)) * 2;
+      const v = Math.abs(pos.getY(i)) / FIELD_HALF_Z;
+      const edge = (1 - u * u * u) * (1 - v * v * v * v);
+      rgba[i * 4] = 1;
+      rgba[i * 4 + 1] = 1;
+      rgba[i * 4 + 2] = 1;
+      rgba[i * 4 + 3] = Math.max(0, edge);
+    }
+    g.setAttribute('color', new BufferAttribute(rgba, 4));
+    return g;
+  }, []);
   const dirt = useMemo(() => groundTexture(lowPower ? 60 : 110), [lowPower]);
 
   /**
@@ -138,20 +154,14 @@ export function Terrain({ lowPower }: { lowPower: boolean }) {
         <meshStandardMaterial vertexColors map={dirt} roughness={1} metalness={0} />
       </mesh>
 
-      {/* Held territory. Unit-width planes scaled on X each frame. */}
-      <mesh ref={greenRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-        <planeGeometry args={[1, FIELD_HALF_Z * 2]} />
-        <meshBasicMaterial color={COLORS.buy} transparent opacity={0.26} depthWrite={false} />
+      {/* Held territory. Unit-width planes scaled on X each frame, carrying
+          their own alpha falloff so they fade out instead of stopping dead. */}
+      <mesh ref={greenRef} geometry={influence} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+        <meshBasicMaterial color={COLORS.buy} vertexColors transparent opacity={0.32} depthWrite={false} />
       </mesh>
-      <mesh ref={redRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-        <planeGeometry args={[1, FIELD_HALF_Z * 2]} />
-        <meshBasicMaterial color={COLORS.sell} transparent opacity={0.26} depthWrite={false} />
+      <mesh ref={redRef} geometry={influence} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+        <meshBasicMaterial color={COLORS.sell} vertexColors transparent opacity={0.32} depthWrite={false} />
       </mesh>
-
-      {/* Field boundary. */}
-      <lineSegments geometry={boundary} position={[0, 0.05, 0]}>
-        <lineBasicMaterial color="#6d6549" transparent opacity={0.35} />
-      </lineSegments>
     </group>
   );
 }
