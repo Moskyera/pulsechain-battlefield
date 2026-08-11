@@ -1,0 +1,1325 @@
+/* ------------------------------------------------------------------ *
+ * PulseChain Battlefield — HUD
+ *
+ * Overlay-first: the canvas owns the viewport, every panel floats above it
+ * with pointer-events restored only on interactive surfaces so dragging the
+ * camera works everywhere the HUD isn't.
+ * ------------------------------------------------------------------ */
+
+:root {
+  --bg: #04070b;
+  --panel: rgba(9, 15, 22, 0.82);
+  --panel-solid: #0a1119;
+  --border: rgba(90, 120, 150, 0.22);
+  --border-bright: rgba(120, 170, 210, 0.4);
+  --text: #d6e2ee;
+  --text-dim: #7d8fa3;
+  --text-faint: #556577;
+  --buy: #22e07a;
+  --buy-dim: rgba(34, 224, 122, 0.15);
+  --sell: #ff3b4e;
+  --sell-dim: rgba(255, 59, 78, 0.15);
+  --warn: #ffb020;
+  --mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas,
+    monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  overscroll-behavior: none;
+}
+
+body {
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------------------ *
+ * Shell
+ * ------------------------------------------------------------------ */
+
+.app {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+.canvas {
+  position: absolute !important;
+  inset: 0;
+}
+
+/* R3F writes `touch-action: auto` inline on the <canvas> element itself, which
+   lets a touch-drag scroll the page instead of orbiting the camera. Only an
+   !important rule can override an inline style. */
+.app canvas {
+  display: block;
+  touch-action: none !important;
+}
+
+.flash-overlay {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 55%, #fff6e0 0%, #ffb86b 40%, transparent 75%);
+  pointer-events: none;
+  z-index: 40;
+  mix-blend-mode: screen;
+  transition: opacity 60ms linear;
+}
+
+.hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+  transition: opacity 220ms ease;
+}
+
+.hud.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.hud > * {
+  pointer-events: none;
+}
+
+.hud button,
+.hud input,
+.hud a,
+.hud .stats-panel,
+.hud .killfeed,
+.hud .force-bar-wrap,
+.hud .search-panel {
+  pointer-events: auto;
+}
+
+.hud-restore {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 30;
+  background: var(--panel);
+  border: 1px solid var(--border-bright);
+  color: var(--text);
+  padding: 8px 14px;
+  border-radius: 4px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  backdrop-filter: blur(8px);
+}
+
+/* ------------------------------------------------------------------ *
+ * Top bar
+ * ------------------------------------------------------------------ */
+
+.hud-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  background: linear-gradient(to bottom, rgba(4, 7, 11, 0.92), transparent);
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: 0.22em;
+  font-weight: 400;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.brand h1 b {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.pair-name {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: var(--buy);
+}
+
+/* ---- status ---- */
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+  position: relative;
+}
+
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-bright);
+  background: rgba(9, 15, 22, 0.9);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  white-space: nowrap;
+}
+
+.live-pill.live {
+  border-color: rgba(34, 224, 122, 0.55);
+  color: var(--buy);
+}
+
+.live-pill.offline {
+  border-color: rgba(255, 176, 32, 0.5);
+  color: var(--warn);
+}
+
+.live-text em {
+  font-style: normal;
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+}
+
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.live-pill.live .live-dot {
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+}
+
+.source-chips {
+  display: flex;
+  gap: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: rgba(9, 15, 22, 0.85);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+  cursor: help;
+}
+
+.chip i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.chip.ok {
+  color: var(--buy);
+  border-color: rgba(34, 224, 122, 0.35);
+}
+.chip.pending {
+  color: #58a6ff;
+  border-color: rgba(88, 166, 255, 0.35);
+}
+.chip.warn {
+  color: var(--warn);
+  border-color: rgba(255, 176, 32, 0.35);
+}
+.chip.bad {
+  color: var(--sell);
+  border-color: rgba(255, 59, 78, 0.35);
+}
+.chip.idle {
+  color: var(--text-faint);
+}
+
+.status-meta {
+  display: flex;
+  gap: 10px;
+  font-size: 10px;
+  color: var(--text-faint);
+  letter-spacing: 0.08em;
+}
+
+.dex-label {
+  color: var(--text-dim);
+}
+
+.degraded-note {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--warn);
+  white-space: nowrap;
+  max-width: 60vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- controls ---- */
+
+.controls {
+  display: flex;
+  gap: 6px;
+}
+
+.ctrl {
+  background: rgba(9, 15, 22, 0.85);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 6px 10px;
+  border-radius: 3px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  transition: all 140ms ease;
+  white-space: nowrap;
+}
+
+.ctrl:hover {
+  border-color: var(--border-bright);
+  color: var(--text);
+}
+
+.ctrl.on {
+  border-color: rgba(34, 224, 122, 0.6);
+  color: var(--buy);
+  background: var(--buy-dim);
+}
+
+/* ------------------------------------------------------------------ *
+ * Toolbar (pair picker + legend)
+ * ------------------------------------------------------------------ */
+
+.hud-toolbar {
+  position: absolute;
+  top: 62px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.pair-picker {
+  position: relative;
+  max-width: 70%;
+}
+
+.preset-row {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.preset {
+  background: rgba(9, 15, 22, 0.85);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 5px 10px;
+  border-radius: 3px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+  transition: all 140ms ease;
+}
+
+.preset:hover {
+  border-color: var(--border-bright);
+  color: var(--text);
+}
+
+.preset.active {
+  border-color: rgba(34, 224, 122, 0.6);
+  color: var(--buy);
+  background: var(--buy-dim);
+}
+
+.search-panel {
+  margin-top: 6px;
+  width: min(460px, 80vw);
+  background: var(--panel);
+  border: 1px solid var(--border-bright);
+  border-radius: 4px;
+  padding: 10px;
+  backdrop-filter: blur(10px);
+}
+
+.search-input {
+  width: 100%;
+  background: rgba(4, 7, 11, 0.9);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 12px;
+  outline: none;
+}
+
+.search-input:focus {
+  border-color: var(--buy);
+}
+
+.search-status {
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--text-faint);
+  min-height: 14px;
+}
+
+.raw-load {
+  background: none;
+  border: none;
+  color: var(--warn);
+  font-size: 10px;
+  padding: 0;
+  text-decoration: underline;
+  font-family: var(--mono);
+}
+
+.search-results {
+  margin-top: 6px;
+  max-height: 44vh;
+  overflow-y: auto;
+}
+
+.search-result {
+  display: grid;
+  grid-template-columns: 1.4fr 0.8fr 0.9fr 1fr;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-top: 1px solid rgba(90, 120, 150, 0.12);
+  color: var(--text-dim);
+  padding: 7px 4px;
+  font-size: 11px;
+}
+
+.search-result:hover {
+  background: rgba(34, 224, 122, 0.07);
+  color: var(--text);
+}
+
+.sr-pair {
+  color: var(--text);
+}
+.sr-dex {
+  color: var(--text-faint);
+}
+.sr-liq,
+.sr-vol {
+  text-align: right;
+}
+
+/* "ALL DEX" badge on the token presets. */
+.preset em {
+  display: block;
+  font-style: normal;
+  font-size: 7.5px;
+  letter-spacing: 0.14em;
+  opacity: 0.55;
+  margin-top: 1px;
+}
+
+.raw-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.search-result-row {
+  display: flex;
+  align-items: stretch;
+  border-top: 1px solid rgba(90, 120, 150, 0.12);
+}
+
+.search-result-row .search-result {
+  border-top: none;
+  flex: 1;
+  min-width: 0;
+}
+
+.sr-all {
+  background: none;
+  border: none;
+  border-left: 1px solid rgba(90, 120, 150, 0.12);
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+.sr-all:hover {
+  color: var(--buy);
+  background: var(--buy-dim);
+}
+
+/* ---- enlisted pools ---- */
+
+.pools-panel {
+  margin-top: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pool-rows {
+  overflow-y: auto;
+  max-height: 190px;
+}
+
+.pool-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.7fr) 56px 52px 30px;
+  gap: 6px;
+  align-items: center;
+  padding: 5px 10px;
+  font-size: 10px;
+  color: var(--text-dim);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(90, 120, 150, 0.08);
+}
+
+.pool-row:hover {
+  background: rgba(120, 170, 210, 0.07);
+  color: var(--text);
+}
+
+.pool-dex,
+.pool-counter,
+.pool-liq,
+.pool-tx {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pool-dex {
+  color: var(--text);
+}
+
+.pool-counter,
+.pool-tx {
+  font-size: 9px;
+  color: var(--text-faint);
+}
+
+.pool-liq,
+.pool-tx {
+  text-align: right;
+}
+
+/* Swaps this session has actually seen from this pool. */
+.pool-live {
+  text-align: center;
+  font-size: 9px;
+  border-radius: 2px;
+  border: 1px solid rgba(90, 120, 150, 0.2);
+  color: var(--text-faint);
+  padding: 1px 0;
+}
+
+.pool-live.active {
+  color: var(--buy);
+  border-color: rgba(34, 224, 122, 0.45);
+  background: var(--buy-dim);
+}
+
+.pair-sub {
+  font-style: normal;
+  color: var(--text-faint);
+  letter-spacing: 0.08em;
+}
+
+.tier-legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  background: rgba(9, 15, 22, 0.8);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 5px 10px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tier-legend:hover {
+  border-color: var(--border-bright);
+}
+
+.legend-mode {
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  padding: 2px 5px;
+  border-radius: 2px;
+  border: 1px solid currentColor;
+}
+
+.legend-mode[data-mode='adaptive'] {
+  color: #7ee0ff;
+}
+
+.legend-mode[data-mode='absolute'] {
+  color: var(--text-dim);
+}
+
+.tier-legend [data-tier='infantry'] {
+  color: #8fb3c9;
+}
+.tier-legend [data-tier='tank'] {
+  color: #6fd3ff;
+}
+.tier-legend [data-tier='artillery'] {
+  color: var(--warn);
+}
+.tier-legend [data-tier='nuke'] {
+  color: #ff6bd6;
+}
+
+/* ------------------------------------------------------------------ *
+ * Side panels
+ * ------------------------------------------------------------------ */
+
+/* Intel and the market feed sit low in their corners rather than spanning the
+   full height. The battlefield needs the upper two-thirds of the viewport —
+   that is where the sky, the ridgelines and any arcing ordnance actually are,
+   and full-height columns buried all of it. */
+.hud-left,
+.hud-right {
+  position: absolute;
+  top: auto;
+  bottom: 122px;
+  /* Short, so the panels sit in the bottom corners and leave the upper ~65% of
+     the viewport to the battle. They cannot move any lower without running
+     into the force bar, so height is what buys the clearance. */
+  max-height: min(33vh, 370px);
+  display: flex;
+  flex-direction: column;
+}
+
+.hud-left {
+  left: 16px;
+  width: 330px;
+  /* Intel + the enlisted-pool list stack; scroll rather than overflow the
+     viewport when a group has many venues. */
+  overflow-y: auto;
+  pointer-events: auto;
+  scrollbar-width: thin;
+}
+
+.hud-right {
+  right: 16px;
+  width: 420px;
+  align-items: flex-end;
+}
+
+.stats-panel,
+.killfeed {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  backdrop-filter: blur(10px);
+  width: 100%;
+  overflow: hidden;
+}
+
+.killfeed {
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
+}
+
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--text-dim);
+}
+
+.panel-head em {
+  font-style: normal;
+  color: var(--text-faint);
+  letter-spacing: 0.06em;
+}
+
+/* ---- stats ---- */
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: rgba(90, 120, 150, 0.12);
+}
+
+.stat {
+  background: var(--panel-solid);
+  padding: 9px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.stat-label {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--text-faint);
+}
+
+.stat-value {
+  font-size: 15px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stat-value.buy {
+  color: var(--buy);
+}
+.stat-value.sell {
+  color: var(--sell);
+}
+
+.stat-sub {
+  font-size: 9px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.army-block {
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.army-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: baseline;
+  padding: 3px 0;
+  font-size: 11px;
+}
+
+.army-row.buy .army-label {
+  color: var(--buy);
+}
+.army-row.sell .army-label {
+  color: var(--sell);
+}
+
+.army-label {
+  letter-spacing: 0.12em;
+  font-size: 10px;
+}
+
+.army-units {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.army-usd {
+  color: var(--text);
+  text-align: right;
+  min-width: 66px;
+}
+
+.reserve-detail {
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--text-faint);
+  display: flex;
+  gap: 6px;
+  cursor: help;
+}
+
+.reserve-detail .sep {
+  opacity: 0.4;
+}
+
+.provenance {
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 9px;
+  color: var(--text-faint);
+}
+
+/* ---- killfeed ---- */
+
+.killfeed-rows {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.killfeed-empty {
+  padding: 20px 12px;
+  font-size: 11px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.kf-row {
+  display: grid;
+  /* tier · side · usd · focus amount · dex · source · age · tx */
+  grid-template-columns: 14px 30px 62px minmax(0, 1fr) 58px 26px 26px 62px;
+  gap: 6px;
+  align-items: center;
+  padding: 5px 10px;
+  font-size: 10.5px;
+  color: var(--text-dim);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  border-bottom: 1px solid rgba(90, 120, 150, 0.08);
+  animation: kfIn 260ms ease;
+}
+
+@keyframes kfIn {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.kf-row.buy {
+  border-left-color: var(--buy);
+}
+.kf-row.sell {
+  border-left-color: var(--sell);
+}
+
+.kf-row:hover {
+  background: rgba(120, 170, 210, 0.07);
+  color: var(--text);
+}
+
+.kf-row.buy .kf-side,
+.kf-row.buy .kf-usd {
+  color: var(--buy);
+}
+.kf-row.sell .kf-side,
+.kf-row.sell .kf-usd {
+  color: var(--sell);
+}
+
+.kf-side {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+
+.kf-usd {
+  text-align: right;
+}
+
+.kf-usd .unpriced {
+  color: var(--warn);
+  font-style: normal;
+  font-size: 9px;
+}
+
+.kf-amount,
+.kf-dex,
+.kf-age,
+.kf-hash {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kf-age {
+  font-size: 9px;
+  color: var(--text-faint);
+}
+
+/* Which venue the trade hit. Colour-coded so a multi-DEX feed is scannable. */
+.kf-dex {
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 0.02em;
+}
+
+.kf-dex[data-dex='pulsex'] {
+  color: #7ee0ff;
+}
+.kf-dex[data-dex='9mm'] {
+  color: #c99bff;
+}
+.kf-dex[data-dex='9inch'] {
+  color: #ffb0e0;
+}
+.kf-dex[data-dex='liberty'] {
+  color: #ffd479;
+}
+.kf-dex[data-dex='switchx'] {
+  color: #8affc1;
+}
+
+.kf-hash {
+  font-size: 9px;
+  color: var(--text-faint);
+  text-align: right;
+}
+
+.kf-src {
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  text-align: center;
+  border-radius: 2px;
+  padding: 1px 0;
+  border: 1px solid rgba(90, 120, 150, 0.25);
+  color: var(--text-faint);
+}
+
+.kf-src[data-src='websocket'] {
+  color: var(--buy);
+  border-color: rgba(34, 224, 122, 0.4);
+}
+
+.kf-tier {
+  text-align: center;
+  font-size: 11px;
+}
+
+.kf-tier[data-tier='infantry'] {
+  color: #8fb3c9;
+}
+.kf-tier[data-tier='tank'] {
+  color: #6fd3ff;
+}
+.kf-tier[data-tier='artillery'] {
+  color: var(--warn);
+}
+.kf-tier[data-tier='nuke'] {
+  color: #ff6bd6;
+  animation: nukeGlow 1.2s ease-in-out infinite;
+}
+
+@keyframes nukeGlow {
+  0%,
+  100% {
+    text-shadow: 0 0 4px currentColor;
+  }
+  50% {
+    text-shadow: 0 0 12px currentColor;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Bottom force bar
+ * ------------------------------------------------------------------ */
+
+.hud-bottom {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(760px, calc(100vw - 32px));
+}
+
+.force-bar-wrap {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px 14px 12px;
+  backdrop-filter: blur(10px);
+}
+
+.force-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 7px;
+}
+
+.force-title {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--text-dim);
+}
+
+.force-window {
+  font-size: 9px;
+  color: var(--text-faint);
+}
+
+.force-track {
+  position: relative;
+  display: flex;
+  height: 12px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(4, 7, 11, 0.8);
+}
+
+.force-track.empty {
+  opacity: 0.28;
+}
+
+.force-fill {
+  height: 100%;
+  transition: width 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.force-fill.buy {
+  background: linear-gradient(90deg, rgba(34, 224, 122, 0.55), var(--buy));
+}
+
+.force-fill.sell {
+  background: linear-gradient(90deg, var(--sell), rgba(255, 59, 78, 0.55));
+}
+
+.force-marker {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: #fff;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
+  transform: translateX(-1px);
+  transition: left 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.force-legend {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 6px;
+  font-size: 10px;
+}
+
+.force-legend span {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.force-legend .buy b {
+  color: var(--buy);
+}
+.force-legend .sell b {
+  color: var(--sell);
+}
+
+.force-legend em {
+  font-style: normal;
+  color: var(--text-faint);
+  font-size: 9px;
+}
+
+.force-idle {
+  color: var(--text-faint);
+  font-size: 9px;
+}
+
+.front-readout {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(90, 120, 150, 0.14);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--text-faint);
+}
+
+.front-readout b.buy {
+  color: var(--buy);
+}
+.front-readout b.sell {
+  color: var(--sell);
+}
+
+/* ------------------------------------------------------------------ *
+ * Overlays
+ * ------------------------------------------------------------------ */
+
+.boot-overlay,
+.gl-error {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(4, 7, 11, 0.8);
+  backdrop-filter: blur(6px);
+  z-index: 50;
+  pointer-events: auto;
+}
+
+.boot-card {
+  background: var(--panel-solid);
+  border: 1px solid var(--border-bright);
+  border-radius: 6px;
+  padding: 28px 32px;
+  max-width: 460px;
+  text-align: center;
+}
+
+.boot-card h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  letter-spacing: 0.14em;
+  font-weight: 500;
+}
+
+.boot-error {
+  color: var(--sell);
+  font-size: 12px;
+  margin: 0 0 12px;
+  word-break: break-word;
+}
+
+.boot-hint {
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.6;
+  margin: 0 0 14px;
+}
+
+.boot-card button {
+  background: var(--buy-dim);
+  border: 1px solid rgba(34, 224, 122, 0.5);
+  color: var(--buy);
+  padding: 8px 16px;
+  border-radius: 3px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+}
+
+.boot-spinner {
+  width: 30px;
+  height: 30px;
+  margin: 0 auto 16px;
+  border: 2px solid rgba(120, 170, 210, 0.2);
+  border-top-color: var(--buy);
+  border-radius: 50%;
+  animation: spin 800ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.warning-strip {
+  position: absolute;
+  bottom: 8px;
+  left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 9px;
+  color: var(--warn);
+  z-index: 25;
+  max-width: 40vw;
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------------ *
+ * Compact / mobile
+ * ------------------------------------------------------------------ */
+
+@media (max-width: 1000px) {
+  .hud-left {
+    width: 270px;
+  }
+  .hud-right {
+    width: 340px;
+  }
+  .kf-row {
+    grid-template-columns: 14px 28px 58px minmax(0, 1fr) 52px 26px;
+  }
+  .kf-src,
+  .kf-hash {
+    display: none;
+  }
+  .pool-row {
+    grid-template-columns: minmax(0, 1fr) 52px 30px;
+  }
+  .pool-counter,
+  .pool-tx {
+    display: none;
+  }
+}
+
+.hud.compact .hud-top {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.hud.compact .status-bar {
+  justify-content: flex-start;
+}
+
+.hud.compact .degraded-note {
+  position: static;
+  transform: none;
+  max-width: 100%;
+  white-space: normal;
+  margin-top: 2px;
+}
+
+.hud.compact .controls {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.hud.compact .hud-toolbar {
+  position: absolute;
+  top: auto;
+  bottom: 196px;
+  left: 8px;
+  right: 8px;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hud.compact .pair-picker {
+  max-width: 100%;
+}
+
+.hud.compact .tier-legend {
+  align-self: flex-start;
+  font-size: 9px;
+  gap: 7px;
+}
+
+/* On a phone the field is the point — intel collapses to the essentials and
+   the feed gets the remaining space. */
+.hud.compact .hud-left {
+  position: absolute;
+  top: auto;
+  bottom: 250px;
+  left: 8px;
+  right: 8px;
+  width: auto;
+  max-height: 132px;
+  overflow: hidden;
+}
+
+.hud.compact .army-block,
+.hud.compact .provenance,
+.hud.compact .pools-panel,
+.hud.compact .stat-grid:nth-of-type(2) {
+  display: none;
+}
+
+.hud.compact .hud-right {
+  top: auto;
+  bottom: 118px;
+  right: 8px;
+  left: 8px;
+  width: auto;
+  max-height: 128px;
+}
+
+.hud.compact .hud-bottom {
+  bottom: 8px;
+  width: calc(100vw - 16px);
+}
+
+.hud.compact .force-bar-wrap {
+  padding: 8px 10px 9px;
+}
+
+.hud.compact .search-panel {
+  width: calc(100vw - 24px);
+}
+
+/* Scrollbars */
+.killfeed-rows::-webkit-scrollbar,
+.search-results::-webkit-scrollbar {
+  width: 5px;
+}
+
+.killfeed-rows::-webkit-scrollbar-thumb,
+.search-results::-webkit-scrollbar-thumb {
+  background: rgba(120, 170, 210, 0.25);
+  border-radius: 3px;
+}
+
+.killfeed-rows::-webkit-scrollbar-track,
+.search-results::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kf-row {
+    animation: none;
+  }
+  .live-pill.live .live-dot {
+    animation: none;
+  }
+  .kf-tier[data-tier='nuke'] {
+    animation: none;
+  }
+}

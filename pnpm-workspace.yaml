@@ -1,0 +1,6 @@
+# pnpm 11 reads build-script approvals from here rather than from package.json.
+# sharp is Next.js's optional image optimiser; allowing its install script keeps
+# `pnpm install` at exit code 0. This app renders no <Image>, so it is not
+# load-bearing — flip to false if the native install ever misbehaves.
+allowBuilds:
+  sharp: true
