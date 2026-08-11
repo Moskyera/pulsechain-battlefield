@@ -29,6 +29,12 @@ export interface BlastRecord {
   side: Side;
   /** `runtime.elapsed` at detonation. */
   at: number;
+  /**
+   * True for a knock-on blast, such as a gun cooking off after a direct hit.
+   * The gun line ignores these, so one destroyed piece can never chain into
+   * wiping out the battery beside it.
+   */
+  secondary: boolean;
 }
 
 const BLAST_CAPACITY = 64;
@@ -40,6 +46,7 @@ function emptyBlasts(): BlastRecord[] {
     radius: 0,
     side: 'buy' as Side,
     at: -1,
+    secondary: false,
   }));
 }
 
@@ -70,13 +77,20 @@ export const runtime = {
 };
 
 /** Called by the combat loop the moment a real round detonates. */
-export function recordBlast(x: number, z: number, radius: number, side: Side): void {
+export function recordBlast(
+  x: number,
+  z: number,
+  radius: number,
+  side: Side,
+  secondary = false,
+): void {
   const slot = runtime.blasts[runtime.blastSeq % BLAST_CAPACITY];
   slot.x = x;
   slot.z = z;
   slot.radius = radius;
   slot.side = side;
   slot.at = runtime.elapsed;
+  slot.secondary = secondary;
   runtime.blastSeq++;
 }
 

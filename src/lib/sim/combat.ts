@@ -293,6 +293,31 @@ export class CombatSystem {
     });
   }
 
+  /**
+   * Set off an explosion that no projectile caused.
+   *
+   * Used for secondary detonations: a gun taking a direct hit cooks off its own
+   * ammunition, which is a bigger blast than the round that killed it. The
+   * event behind it is still a real trade landing on that piece; only the
+   * fireball it sets off is dramatisation, in the same way the camera shake is.
+   */
+  burst(x: number, y: number, z: number, radius: number, side: Side, duration = 1.6): void {
+    let slot = this.explosions.find((e) => !e.active);
+    if (!slot) slot = this.explosions.reduce((a, b) => (a.t > b.t ? a : b));
+
+    slot.active = true;
+    slot.side = side;
+    slot.tier = 'artillery';
+    slot.t = 0;
+    slot.duration = duration;
+    slot.x = x;
+    slot.y = y;
+    slot.z = z;
+    slot.radius = radius;
+
+    this.shake = Math.min(2.5, this.shake + radius * 0.06);
+  }
+
   /** Current world position of a projectile along its ballistic arc. */
   positionOf(p: Projectile, out: { x: number; y: number; z: number }): void {
     const t = p.t;

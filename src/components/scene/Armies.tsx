@@ -209,6 +209,15 @@ interface SideState {
   yaw: Float32Array;
   /** Metres per second right now, for leg swing, lean and bob. */
   speed: Float32Array;
+  /**
+   * Low-passed version of the push/give-ground drive.
+   *
+   * The raw value is the front line's spring velocity, which crosses zero
+   * constantly as the spring settles. Feeding that straight into the men's
+   * posts made every target jump several metres the instant the sign flipped,
+   * and the whole army juddered on the spot trying to chase it.
+   */
+  drive: number;
 }
 
 function makeSideState(capacity: number): SideState {
@@ -233,6 +242,7 @@ function makeSideState(capacity: number): SideState {
     gait: new Float32Array(capacity),
     yaw: new Float32Array(capacity),
     speed: new Float32Array(capacity),
+    drive: 0,
   };
 }
 
@@ -459,6 +469,11 @@ function paintSide(a: PaintArgs): void {
 
   let legDrawn = 0;
 
+  // Half a second of smoothing: enough to kill the sign-flapping around zero
+  // without losing a real push.
+  state.drive += (advance - state.drive) * Math.min(1, dt * 2);
+  const drive = state.drive;
+
   /* ---- casualties from real detonations landing on our ground ---- */
   state.blastCursor = drainBlasts(state.blastCursor, (blast) => {
     // The side that fired is not the side that bleeds.
@@ -572,11 +587,15 @@ function paintSide(a: PaintArgs): void {
     // Slow surge over most of the cycle, quick fall-back at the end.
     const surge = pushPhase < 0.75 ? pushPhase / 0.75 : 1 - (pushPhase - 0.75) / 0.25;
 
-    // A side that is winning presses forward and bounds: odd-numbered men rush
+    // A side that is winning presses forward and bounds: half the men rush
     // while the others hold. A side being driven back gives ground instead.
-    const bounding = advance > 0 ? (i % 2 === 0 ? 1.3 : 0.55) : 1;
-    const press = c.pushReach * surge * (0.45 + 0.55 * Math.max(0, advance)) * bounding;
-    const giveGround = Math.max(0, -advance) * 3.2;
+    // Both effects scale continuously out of the drive, so as the push fades
+    // the difference between bounding and not simply vanishes: it must never
+    // switch, or every post on the field moves at once.
+    const push = Math.max(0, drive);
+    const bounding = 1 + push * (i % 2 === 0 ? 0.32 : -0.38);
+    const press = c.pushReach * surge * (0.45 + 0.55 * push) * bounding;
+    const giveGround = Math.max(0, -drive) * 3.2;
 
     const postX = frontX + dir * (3 + c.postDepth * band) - dir * press + dir * giveGround;
 
@@ -612,8 +631,16 @@ function paintSide(a: PaintArgs): void {
 
     let covered = 0;
     if (state.moving[i] === 1 && gap > 0.0001) {
-      const hurry = Math.abs(advance) > 0.25 || gap > 8 || marching;
-      const pace = (hurry ? RUN_SPEED : MARCH_SPEED) * c.pace * (intense ? 1.15 : 1);
+      // Urgency rises smoothly with how hard the line is moving and how far out
+      // of place he is, so nobody flips between a march and a sprint on a
+      // frame boundary.
+      const urgency = marching
+        ? 1
+        : Math.min(1, Math.max(Math.abs(drive) * 1.6, (gap - 2) / 6));
+      const pace =
+        (MARCH_SPEED + (RUN_SPEED - MARCH_SPEED) * Math.max(0, urgency)) *
+        c.pace *
+        (intense ? 1.15 : 1);
       covered = Math.min(gap, pace * dt);
       x += (dx / gap) * covered;
       z += (dz / gap) * covered;
@@ -662,7 +689,7 @@ function paintSide(a: PaintArgs): void {
     const recoil = firing ? Math.sin(burstT * Math.PI) * 0.07 : 0;
 
     // Leaning into the run, and into the push or away from it while holding.
-    const lean = moveMix * 0.22 + (1 - moveMix) * advance * 0.13;
+    const lean = moveMix * 0.22 + (1 - moveMix) * drive * 0.13;
     dummy.position.set(x, lift, z);
     dummy.rotation.set(0, yaw, Math.sin(gait) * 0.03 - recoil + lean);
     dummy.scale.setScalar(scale);
