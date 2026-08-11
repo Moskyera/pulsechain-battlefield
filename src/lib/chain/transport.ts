@@ -28,7 +28,7 @@ export class TransportError extends Error {
 export const browserRpc: RpcTransport = async (requests) => {
   if (requests.length === 0) return [];
 
-  const res = await fetch('/api/rpc', {
+  const res = await fetch('/battlefield/api/rpc', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ requests }),

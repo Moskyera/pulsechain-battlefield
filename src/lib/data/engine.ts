@@ -131,7 +131,7 @@ export class BattleEngine {
 
     let group: BattleGroup;
     try {
-      const res = await fetch(`/api/group?${query}`, { cache: 'no-store' });
+      const res = await fetch(`/battlefield/api/group?${query}`, { cache: 'no-store' });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(body.error ?? `Failed to resolve battlefield (HTTP ${res.status})`);
@@ -421,7 +421,7 @@ export class BattleEngine {
     }
 
     try {
-      const res = await fetch(`/api/prices?${query}`, { cache: 'no-store' });
+      const res = await fetch(`/battlefield/api/prices?${query}`, { cache: 'no-store' });
       if (!this.alive(gen)) return;
 
       if (res.status === 429) {
@@ -539,7 +539,7 @@ export class BattleEngine {
 
     try {
       const address = pulsexPool.ctx.meta.address;
-      const res = await fetch(`/api/subgraph?pair=${address}&swaps=0`, { cache: 'no-store' });
+      const res = await fetch(`/battlefield/api/subgraph?pair=${address}&swaps=0`, { cache: 'no-store' });
       if (!this.alive(gen)) return;
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
@@ -596,7 +596,7 @@ export class BattleEngine {
     if (stale) {
       const query = groupQuery(this.target);
       try {
-        const res = await fetch(`/api/group?${query}`, { cache: 'no-store' });
+        const res = await fetch(`/battlefield/api/group?${query}`, { cache: 'no-store' });
         if (res.ok && this.alive(gen)) {
           const group = (await res.json()) as BattleGroup;
           const store = useBattleStore.getState();

@@ -44,7 +44,7 @@ export function BattlePicker({ compact }: { compact: boolean }) {
     setSearching(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+        const res = await fetch(`/battlefield/api/search?q=${encodeURIComponent(q)}`);
         const body = (await res.json()) as { results?: MarketSnapshot[]; error?: string };
         if (id !== requestId.current) return;
         setResults(body.results ?? []);
