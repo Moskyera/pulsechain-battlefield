@@ -45,7 +45,9 @@ function Base({ side, x, lowPower }: { side: 'buy' | 'sell'; x: number; lowPower
     // Kept low: at full strength the keeps render as solid slabs of pure team
     // colour and pull the eye straight off the fighting.
     const mat = keep.material as MeshStandardMaterial;
-    mat.emissiveIntensity = field.hasData ? (0.08 + share * 0.34) * pulse : 0.06;
+    // Slightly hotter than before: with the base point light gone, the keep's
+    // own emissive is what says which side this is.
+    mat.emissiveIntensity = field.hasData ? (0.12 + share * 0.42) * pulse : 0.09;
 
     if (groupRef.current) {
       groupRef.current.position.y = Math.sin(runtime.elapsed * 0.8 + (side === 'buy' ? 0 : 1.7)) * 0.06;
@@ -79,19 +81,20 @@ function Base({ side, x, lowPower }: { side: 'buy' | 'sell'; x: number; lowPower
           <meshStandardMaterial
             color="#16202b"
             emissive={color}
-            emissiveIntensity={0.35}
+            emissiveIntensity={0.5}
             roughness={0.7}
             metalness={0.3}
           />
         </mesh>
       ))}
 
-      {/* Banner light, visible from across the field */}
+      {/* Banner beacon. Unlit and toneMapped={false}, so it burns team-bright
+          without a point light behind it — a real light here made every
+          standard material in range pay for it on every pixel. */}
       <mesh position={[0, 9.5, 0]}>
-        <sphereGeometry args={[0.9, lowPower ? 6 : 12, lowPower ? 5 : 10]} />
+        <sphereGeometry args={[1.05, lowPower ? 6 : 10, lowPower ? 5 : 8]} />
         <meshBasicMaterial color={color} toneMapped={false} />
       </mesh>
-      <pointLight position={[0, 9.5, 0]} color={color} intensity={lowPower ? 60 : 140} distance={45} decay={2} />
     </group>
   );
 }

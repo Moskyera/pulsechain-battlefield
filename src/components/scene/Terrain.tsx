@@ -39,10 +39,20 @@ export function Terrain({ lowPower }: { lowPower: boolean }) {
   );
   const dirt = useMemo(() => groundTexture(lowPower ? 60 : 110), [lowPower]);
 
-  /** Mottled, gently displaced terrain. Built once. */
+  /**
+   * Mottled, gently displaced terrain. Built once.
+   *
+   * The segment count is kept low on purpose: the playing area is masked flat,
+   * so all this resolution ever bought was smoother undulation out in the fog.
+   * At 170 segments this single plane was 46k triangles — a third of everything
+   * drawn per frame, and the largest geometry in the scene by far. The tiled
+   * detail map, not the vertex grid, is what holds up at close zoom.
+   */
   const ground = useMemo(() => {
-    const segs = lowPower ? 90 : 170;
-    const g = new PlaneGeometry(560, 460, segs, Math.round(segs * 0.8));
+    const segs = lowPower ? 40 : 72;
+    // Only has to reach past the point where the fog turns opaque; beyond that
+    // it is invisible ground being shaded for nobody.
+    const g = new PlaneGeometry(440, 380, segs, Math.round(segs * 0.8));
     g.rotateX(-Math.PI / 2);
 
     const pos = g.attributes.position;
@@ -65,12 +75,15 @@ export function Terrain({ lowPower }: { lowPower: boolean }) {
       const n2 = Math.sin(x * 0.021 + 1.7) * Math.cos(z * 0.017 - 0.6);
       const n3 = Math.sin(x * 0.31 + 0.4) * Math.cos(z * 0.27 + 1.1);
 
-      // Flat inside the field, rising once clear of it.
+      // Flat inside the field, rising once clear of it. The rise is gentle and
+      // ramps in slowly: with the ridgelines gone this displacement is the only
+      // thing shaping the horizon, and at the old amplitude it read as a lump
+      // of ground sitting behind the battle rather than open country.
       const outX = Math.max(0, Math.abs(x) - FIELD_HALF_X - 4);
       const outZ = Math.max(0, Math.abs(z) - FIELD_HALF_Z - 4);
-      const away = Math.min(1, Math.hypot(outX, outZ) / 55);
+      const away = Math.min(1, Math.hypot(outX, outZ) / 110);
       const mask = away * away;
-      pos.setY(i, (n2 * 5.5 + n1 * 1.6 + n3 * 0.35) * mask);
+      pos.setY(i, (n2 * 2.6 + n1 * 1.1 + n3 * 0.3) * mask);
 
       // Ground cover: dry grass where it's damp, sand on the high patches.
       const wet = n2 * 0.5 + 0.5;
@@ -128,11 +141,11 @@ export function Terrain({ lowPower }: { lowPower: boolean }) {
       {/* Held territory. Unit-width planes scaled on X each frame. */}
       <mesh ref={greenRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
         <planeGeometry args={[1, FIELD_HALF_Z * 2]} />
-        <meshBasicMaterial color={COLORS.buy} transparent opacity={0.2} depthWrite={false} />
+        <meshBasicMaterial color={COLORS.buy} transparent opacity={0.26} depthWrite={false} />
       </mesh>
       <mesh ref={redRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
         <planeGeometry args={[1, FIELD_HALF_Z * 2]} />
-        <meshBasicMaterial color={COLORS.sell} transparent opacity={0.2} depthWrite={false} />
+        <meshBasicMaterial color={COLORS.sell} transparent opacity={0.26} depthWrite={false} />
       </mesh>
 
       {/* Field boundary. */}

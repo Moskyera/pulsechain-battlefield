@@ -68,8 +68,8 @@ const PRESSURE_TICK_MS = 3_000;
  * reported in the HUD, where a number belongs.
  */
 const UNITS_PER_SQRT_USD = 1 / 70;
-const MAX_UNITS_PER_SIDE = 20;
-const MAX_UNITS_PER_SIDE_LOW = 12;
+const MAX_UNITS_PER_SIDE = 28;
+const MAX_UNITS_PER_SIDE_LOW = 16;
 const MIN_UNITS_PER_SIDE = 5;
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);

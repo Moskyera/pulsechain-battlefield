@@ -40,6 +40,17 @@ import type { Side } from '@/lib/data/types';
 const TANKS_PER_SIDE = TANK_INDICES.length;
 const LAUNCHERS_PER_SIDE = LAUNCHER_INDICES.length;
 
+/**
+ * Per-piece jitter, hashed once instead of once per frame. Same reasoning as
+ * the soldier table in Armies: these values are fixed for the life of the gun.
+ */
+function batteryJitter(seed: string): { settlePhase: number; yawJitter: number }[] {
+  return BATTERY.map((_, i) => ({
+    settlePhase: hashUnit(seed + i) * 6,
+    yawJitter: hashSigned(seed + i + 'y') * 0.08,
+  }));
+}
+
 export function Emplacements({ lowPower }: { lowPower: boolean }) {
   const buyTanks = useRef<InstancedMesh>(null);
   const sellTanks = useRef<InstancedMesh>(null);
@@ -52,6 +63,8 @@ export function Emplacements({ lowPower }: { lowPower: boolean }) {
   const tank = useMemo(() => tankGeometry(), []);
   const launcher = useMemo(() => launcherGeometry(), []);
   const plating = useMemo(() => armourTexture(), []);
+  const buyJitter = useMemo(() => batteryJitter('emp-g'), []);
+  const sellJitter = useMemo(() => batteryJitter('emp-r'), []);
 
   useFrame(() => {
     const t = runtime.elapsed;
@@ -64,7 +77,7 @@ export function Emplacements({ lowPower }: { lowPower: boolean }) {
       active,
       side: 'buy',
       dir: -1,
-      seed: 'emp-g',
+      jitter: buyJitter,
       dummy,
       time: t,
       yaw: 0,
@@ -77,7 +90,7 @@ export function Emplacements({ lowPower }: { lowPower: boolean }) {
       active,
       side: 'sell',
       dir: 1,
-      seed: 'emp-r',
+      jitter: sellJitter,
       dummy,
       time: t,
       yaw: Math.PI,
@@ -89,7 +102,7 @@ export function Emplacements({ lowPower }: { lowPower: boolean }) {
       vertexColors
       map={plating}
       emissive={color}
-      emissiveIntensity={0.18}
+      emissiveIntensity={0.12}
       roughness={0.78}
       metalness={0.28}
     />
@@ -135,14 +148,14 @@ interface PlaceArgs {
   active: boolean;
   side: Side;
   dir: -1 | 1;
-  seed: string;
+  jitter: { settlePhase: number; yawJitter: number }[];
   dummy: Object3D;
   time: number;
   yaw: number;
 }
 
 function place(a: PlaceArgs): void {
-  const { tanks, launchers, markers, active, side, dir, seed, dummy, time, yaw } = a;
+  const { tanks, launchers, markers, active, side, dir, jitter, dummy, time, yaw } = a;
   if (!tanks || !launchers) return;
 
   if (!active) {
@@ -163,7 +176,7 @@ function place(a: PlaceArgs): void {
 
   for (let i = 0; i < BATTERY.length; i++) {
     const piece = BATTERY[i];
-    const s = seed + i;
+    const j = jitter[i];
 
     // Placement comes from the shared battery definition — the same call the
     // combat system uses to decide where a round leaves from, so the muzzle
@@ -178,14 +191,10 @@ function place(a: PlaceArgs): void {
     // Sharp kick back, then a slower settle forward.
     const kick = recoil * recoil;
 
-    const settle = Math.sin(time * 0.8 + hashUnit(s) * 6) * 0.015;
+    const settle = Math.sin(time * 0.8 + j.settlePhase) * 0.015;
     dummy.position.set(x - dir * kick * 2.6, settle + kick * 0.25, z);
     // Nose up under recoil, and a slight yaw slap.
-    dummy.rotation.set(
-      kick * 0.16 * -dir,
-      yaw + hashSigned(s + 'y') * 0.08 + kick * 0.05,
-      0,
-    );
+    dummy.rotation.set(kick * 0.16 * -dir, yaw + j.yawJitter + kick * 0.05, 0);
     dummy.scale.setScalar(piece.scale);
     dummy.updateMatrix();
 
@@ -199,9 +208,11 @@ function place(a: PlaceArgs): void {
     // dark gunmetal so they read against tan ground, which leaves nothing
     // saying whose they are — this does, and it also flags where the guns are.
     if (markers && markerN < BATTERY.length) {
-      dummy.position.set(x - dir * recoil * 0.8, 3.5 + piece.scale * 0.5, z);
+      // Kept modest: the camera is closer than it used to be, and at the old
+      // size these read as billboards floating over the guns.
+      dummy.position.set(x - dir * recoil * 0.8, 3.1 + piece.scale * 0.45, z);
       dummy.rotation.set(0, 0, 0);
-      dummy.scale.set(1.5, 0.75, 0.14);
+      dummy.scale.set(1.0, 0.5, 0.1);
       dummy.updateMatrix();
       markers.setMatrixAt(markerN++, dummy.matrix);
     }

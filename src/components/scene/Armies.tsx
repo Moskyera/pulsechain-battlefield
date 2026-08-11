@@ -35,8 +35,8 @@ import { COLORS, FIELD_HALF_Z, GREEN_BASE_X, RED_BASE_X, frontLineToX } from '@/
  * ─────────────────────────────────────────────────────────────────────────
  */
 
-export const MAX_UNITS_HIGH = 20;
-export const MAX_UNITS_LOW = 12;
+export const MAX_UNITS_HIGH = 28;
+export const MAX_UNITS_LOW = 16;
 
 /** Seconds between one soldier's bursts (before per-soldier variation). */
 const FIRE_INTERVAL_MIN = 1.6;
@@ -45,6 +45,83 @@ const FIRE_INTERVAL_SPAN = 3.4;
 const BURST_FRACTION = 0.16;
 /** How far an ambient round travels before it fades out. */
 const AMBIENT_RANGE = 15;
+
+/**
+ * Everything about one soldier that never changes while he is on the field.
+ *
+ * These are all derived from his index and the battlefield seed, so they were
+ * being re-hashed from freshly built strings on every single frame — seventeen
+ * string allocations per soldier, forty soldiers, sixty times a second. The
+ * numbers are identical every time; only the clock moves. Computing them once
+ * per (seed, count) turns ~40,000 allocations a second into zero, which is what
+ * the periodic hitches were made of.
+ */
+interface SoldierConst {
+  postDepth: number;
+  postZ: number;
+  pushPeriod: number;
+  pushOffset: number;
+  pushReach: number;
+  wanderRateX: number;
+  wanderRateZ: number;
+  wanderPhX: number;
+  wanderPhZ: number;
+  reach: number;
+  gaitRate: number;
+  gaitPhase: number;
+  yawJitter: number;
+  fireInterval: number;
+  fireOffset: number;
+  scale: number;
+}
+
+function buildSoldierTable(seed: string, count: number): SoldierConst[] {
+  const table: SoldierConst[] = [];
+  for (let i = 0; i < count; i++) {
+    const s = seed + i;
+
+    // Stratified placement, not a raw hash draw. Each soldier owns one slot in
+    // depth and one in width, so an army always fills its ground evenly —
+    // hashing both axes independently let whole squads land on top of each
+    // other, which is exactly how one side ends up stacked in a heap.
+    const depthSlot = (i + 0.5) / count;
+    // 7 is coprime with any plausible count, so the width slot walks the field
+    // out of step with the depth slot instead of forming a diagonal.
+    const widthSlot = (((i * 7 + 3) % count) + 0.5) / count;
+
+    table.push({
+      postDepth: Math.pow(depthSlot, 0.75) + hashSigned(s + 'dj') * 0.05,
+      postZ: (widthSlot - 0.5) * 2 * FIELD_HALF_Z * 0.95 + hashSigned(s + 'z') * 1.8,
+      pushPeriod: 9 + hashUnit(s + 'pp') * 11,
+      pushOffset: hashUnit(s + 'ph'),
+      pushReach: 2 + hashUnit(s + 'pr') * 5,
+      wanderRateX: 0.16 + hashUnitSalted(s, 21) * 0.3,
+      wanderRateZ: 0.13 + hashUnitSalted(s, 22) * 0.27,
+      wanderPhX: hashUnit(s + 'px') * Math.PI * 2,
+      wanderPhZ: hashUnit(s + 'pz') * Math.PI * 2,
+      reach: 1.4 + hashUnit(s + 'rr') * 2.2,
+      gaitRate: 0.75 + hashUnitSalted(s, 23) * 0.5,
+      gaitPhase: hashUnit(s + 'g') * Math.PI * 2,
+      yawJitter: hashSigned(s + 'yaw') * 0.2,
+      fireInterval: FIRE_INTERVAL_MIN + hashUnit(s + 'fi') * FIRE_INTERVAL_SPAN,
+      fireOffset: hashUnit(s + 'fo'),
+      scale: 1.42 + hashUnitSalted(s, 11) * 0.16,
+    });
+  }
+  return table;
+}
+
+/** Rebuilds the constants only when the battlefield or the head count changes. */
+function useSoldierTable() {
+  const ref = useRef<{ key: string; table: SoldierConst[] }>({ key: '', table: [] });
+  return (seed: string, count: number): SoldierConst[] => {
+    const key = seed + '|' + count;
+    if (ref.current.key !== key) {
+      ref.current = { key, table: buildSoldierTable(seed, count) };
+    }
+    return ref.current.table;
+  };
+}
 
 export function Armies({ lowPower }: { lowPower: boolean }) {
   const greenRef = useRef<InstancedMesh>(null);
@@ -60,6 +137,8 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
   const capacity = lowPower ? MAX_UNITS_LOW : MAX_UNITS_HIGH;
 
   const seed = useBattleStore((s) => targetKey(s.target));
+  const greenTable = useSoldierTable();
+  const redTable = useSoldierTable();
 
   useFrame((_, rawDelta) => {
     const dt = Math.min(rawDelta, 0.05);
@@ -68,15 +147,18 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
     const frontX = frontLineToX(runtime.frontLine);
     const intense = field.intense;
 
+    const greenCount = field.hasData ? Math.min(field.greenUnits, capacity) : 0;
+    const redCount = field.hasData ? Math.min(field.redUnits, capacity) : 0;
+
     paintSide({
       mesh: greenRef.current,
       tracers: greenTracers.current,
       flashes: greenFlashes.current,
-      count: field.hasData ? Math.min(field.greenUnits, capacity) : 0,
+      count: greenCount,
       dir: -1,
       baseX: GREEN_BASE_X,
       frontX,
-      seed: seed + ':g',
+      table: greenTable(seed + ':g', greenCount),
       dummy,
       time: t,
       intense,
@@ -86,11 +168,11 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
       mesh: redRef.current,
       tracers: redTracers.current,
       flashes: redFlashes.current,
-      count: field.hasData ? Math.min(field.redUnits, capacity) : 0,
+      count: redCount,
       dir: 1,
       baseX: RED_BASE_X,
       frontX,
-      seed: seed + ':r',
+      table: redTable(seed + ':r', redCount),
       dummy,
       time: t,
       intense,
@@ -102,7 +184,9 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
       vertexColors
       map={cloth}
       emissive={color}
-      emissiveIntensity={0.22}
+      // Enough to say which army, not enough to drown the baked detail: at 0.22
+      // the fatigues, webbing, skin and gunmetal all read as one flat colour.
+      emissiveIntensity={0.15}
       roughness={0.82}
       metalness={0.08}
     />
@@ -165,14 +249,15 @@ interface PaintArgs {
   dir: -1 | 1;
   baseX: number;
   frontX: number;
-  seed: string;
+  /** Per-soldier constants, built once per (seed, count). */
+  table: SoldierConst[];
   dummy: Object3D;
   time: number;
   intense: boolean;
 }
 
 function paintSide(a: PaintArgs): void {
-  const { mesh, tracers, flashes, count, dir, baseX, frontX, seed, dummy, time, intense } = a;
+  const { mesh, tracers, flashes, count, dir, baseX, frontX, table, dummy, time, intense } = a;
   if (!mesh) return;
 
   mesh.count = count;
@@ -195,49 +280,28 @@ function paintSide(a: PaintArgs): void {
   let flashN = 0;
 
   for (let i = 0; i < count; i++) {
-    const s = seed + i;
+    const c = table[i];
+    if (!c) continue;
 
     /* ---- this soldier's own post, and his own wander around it ---- */
-    // Stratified placement, not a raw hash draw. Each soldier owns one slot in
-    // depth and one in width, so an army always fills its ground evenly —
-    // hashing both axes independently let whole squads land on top of each
-    // other, which is exactly how one side ends up stacked in a heap.
-    const depthSlot = (i + 0.5) / count;
-    const postDepth = Math.pow(depthSlot, 0.75) + hashSigned(s + 'dj') * 0.05;
-
-    // 7 is coprime with any plausible count, so the width slot walks the field
-    // out of step with the depth slot instead of forming a diagonal.
-    const widthSlot = (((i * 7 + 3) % count) + 0.5) / count;
-    const postZ =
-      (widthSlot - 0.5) * 2 * FIELD_HALF_Z * 0.95 + hashSigned(s + 'z') * 1.8;
-
     // Every soldier is trying to push. He works his way forward on his own
     // clock, then falls back and goes again — so the line is always straining
     // toward the enemy instead of standing still.
-    const pushPeriod = 9 + hashUnit(s + 'pp') * 11;
-    const pushPhase = ((time + hashUnit(s + 'ph') * pushPeriod) % pushPeriod) / pushPeriod;
+    const pushPhase = ((time + c.pushOffset * c.pushPeriod) % c.pushPeriod) / c.pushPeriod;
     // Slow advance over most of the cycle, quick fall-back at the end.
     const advance =
       pushPhase < 0.75 ? pushPhase / 0.75 : 1 - (pushPhase - 0.75) / 0.25;
-    const pushReach = (2 + hashUnit(s + 'pr') * 5) * advance;
 
-    const postX = frontX + dir * (3 + postDepth * band) - dir * pushReach;
+    const postX = frontX + dir * (3 + c.postDepth * band) - dir * c.pushReach * advance;
 
     // Two independent slow oscillations, each with its own rate and phase, so
     // no two soldiers ever trace the same path or share a rhythm.
-    const wanderRateX = 0.16 + hashUnitSalted(s, 21) * 0.3;
-    const wanderRateZ = 0.13 + hashUnitSalted(s, 22) * 0.27;
-    const wanderPhX = hashUnit(s + 'px') * Math.PI * 2;
-    const wanderPhZ = hashUnit(s + 'pz') * Math.PI * 2;
-    const reach = 1.4 + hashUnit(s + 'rr') * 2.2;
-
-    const wx = Math.sin(time * wanderRateX + wanderPhX) * reach;
-    const wz = Math.cos(time * wanderRateZ + wanderPhZ) * reach;
+    const wx = Math.sin(time * c.wanderRateX + c.wanderPhX) * c.reach;
+    const wz = Math.cos(time * c.wanderRateZ + c.wanderPhZ) * c.reach;
 
     // Marching gait: |sin| gives two footfalls per cycle. Each soldier steps at
     // his own tempo.
-    const gaitRate = gaitSpeed * (0.75 + hashUnitSalted(s, 23) * 0.5);
-    const gait = time * gaitRate + hashUnit(s + 'g') * Math.PI * 2;
+    const gait = time * gaitSpeed * c.gaitRate + c.gaitPhase;
     const lift = Math.abs(Math.sin(gait)) * gaitLift;
     const stride = Math.sin(gait) * (intense ? 0.34 : 0.2);
 
@@ -246,19 +310,18 @@ function paintSide(a: PaintArgs): void {
     // right, and the push above can strain against it but never through it.
     const rawX = postX + wx - dir * stride;
     const x = dir === -1 ? Math.min(rawX, frontX - 1.6) : Math.max(rawX, frontX + 1.6);
-    const z = Math.max(-FIELD_HALF_Z, Math.min(FIELD_HALF_Z, postZ + wz));
-    const scale = 1.42 + hashUnitSalted(s, 11) * 0.16;
+    const z = Math.max(-FIELD_HALF_Z, Math.min(FIELD_HALF_Z, c.postZ + wz));
+    const scale = c.scale;
 
     /* ---- ambient burst timing (cosmetic; see the file header) ---- */
-    const interval = FIRE_INTERVAL_MIN + hashUnit(s + 'fi') * FIRE_INTERVAL_SPAN;
-    const cycle = ((time + hashUnit(s + 'fo') * interval) % interval) / interval;
+    const cycle = ((time + c.fireOffset * c.fireInterval) % c.fireInterval) / c.fireInterval;
     const firing = cycle < BURST_FRACTION;
     const burstT = firing ? cycle / BURST_FRACTION : 0;
 
     // A firing soldier squares up to the enemy and takes the recoil; otherwise
     // he scans his sector.
-    const scan = firing ? 0 : Math.sin(time * 0.45 + wanderPhX) * 0.22;
-    const yaw = (dir === -1 ? 0 : Math.PI) + hashSigned(s + 'yaw') * 0.2 + scan;
+    const scan = firing ? 0 : Math.sin(time * 0.45 + c.wanderPhX) * 0.22;
+    const yaw = (dir === -1 ? 0 : Math.PI) + c.yawJitter + scan;
     const recoil = firing ? Math.sin(burstT * Math.PI) * 0.07 : 0;
 
     dummy.position.set(x, lift, z);

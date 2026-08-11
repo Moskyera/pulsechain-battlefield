@@ -49,6 +49,9 @@ export function Combat({ lowPower }: { lowPower: boolean }) {
   const dummy = useMemo(() => new Object3D(), []);
   const cur = useMemo(() => new Vector3(), []);
   const ahead = useMemo(() => new Vector3(), []);
+  /** Reused for the exhaust plume's position — cloning here allocated a vector
+      per rocket per frame, straight into the garbage collector. */
+  const back = useMemo(() => new Vector3(), []);
   const scratch = useMemo(() => ({ x: 0, y: 0, z: 0 }), []);
   const impacts = useMemo<ImpactEvent[]>(() => [], []);
   const tint = useMemo(() => new Color(), []);
@@ -189,7 +192,7 @@ export function Combat({ lowPower }: { lowPower: boolean }) {
         // Exhaust plume trailing the motor, fading as the rocket climbs away.
         const eIdx2 = isBuy ? buyExhaustN : sellExhaustN;
         if (exhaustMesh && eIdx2 < projCap) {
-          const back = cur.clone().lerp(ahead, -0.6);
+          back.copy(cur).lerp(ahead, -0.6);
           dummy.position.copy(back);
           dummy.rotation.set(0, 0, 0);
           const puff = p.size * (0.55 + Math.sin(p.t * 30) * 0.12);
@@ -271,7 +274,10 @@ export function Combat({ lowPower }: { lowPower: boolean }) {
     commitColored(sellRings.current, sellB);
   });
 
-  const blastGeometry = <sphereGeometry args={[1, lowPower ? 8 : 14, lowPower ? 6 : 12]} />;
+  // Fireballs are additive blobs, not modelled surfaces: a hundred of them at
+  // 14×12 segments was ~30k triangles a frame during a busy minute, and nobody
+  // could tell them from 10×8.
+  const blastGeometry = <sphereGeometry args={[1, lowPower ? 7 : 10, lowPower ? 5 : 8]} />;
 
   return (
     <group>
@@ -356,7 +362,7 @@ export function Combat({ lowPower }: { lowPower: boolean }) {
 
       {/* Smoke — shared by both sides; smoke has no team. */}
       <instancedMesh ref={smoke} args={[undefined, undefined, blastCap * 2]} frustumCulled={false}>
-        <sphereGeometry args={[1, lowPower ? 6 : 10, lowPower ? 5 : 8]} />
+        <sphereGeometry args={[1, lowPower ? 6 : 8, lowPower ? 5 : 6]} />
         <meshStandardMaterial
           color="#2b2f33"
           transparent
@@ -369,7 +375,7 @@ export function Combat({ lowPower }: { lowPower: boolean }) {
 
       {/* Ground shockwaves */}
       <instancedMesh ref={buyRings} args={[undefined, undefined, blastCap]} frustumCulled={false}>
-        <ringGeometry args={[0.82, 1, lowPower ? 16 : 32]} />
+        <ringGeometry args={[0.82, 1, lowPower ? 14 : 22]} />
         <meshBasicMaterial
           transparent
           opacity={0.9}
@@ -380,7 +386,7 @@ export function Combat({ lowPower }: { lowPower: boolean }) {
         />
       </instancedMesh>
       <instancedMesh ref={sellRings} args={[undefined, undefined, blastCap]} frustumCulled={false}>
-        <ringGeometry args={[0.82, 1, lowPower ? 16 : 32]} />
+        <ringGeometry args={[0.82, 1, lowPower ? 14 : 22]} />
         <meshBasicMaterial
           transparent
           opacity={0.9}

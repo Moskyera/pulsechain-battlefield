@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
+import { PerformanceMonitor } from '@react-three/drei';
 import { Scene } from './scene/Scene';
 import { Hud } from './hud/Hud';
 import { useDeviceTier } from '@/hooks/useDeviceTier';
@@ -17,6 +18,31 @@ import { field } from '@/lib/sim/field';
  * context, so rendering it during SSR just throws; gating on a mounted flag is
  * simpler and more predictable than a dynamic import with `ssr: false`.
  */
+/**
+ * Benchmark handle, mounted only for `?bench=1`.
+ *
+ * Frame cost can't be sampled with requestAnimationFrame in a background tab —
+ * the browser stops issuing frames. Exposing R3F's `advance` lets a profiler
+ * drive full frames on demand (sim + draw), and `gl.getContext().finish()`
+ * makes the GPU cost land inside the measurement instead of after it.
+ */
+function BenchHandle() {
+  const gl = useThree((s) => s.gl);
+  const scene = useThree((s) => s.scene);
+  const camera = useThree((s) => s.camera);
+  const advance = useThree((s) => s.advance);
+
+  useEffect(() => {
+    const w = window as unknown as { __bf?: unknown };
+    w.__bf = { gl, scene, camera, advance };
+    return () => {
+      delete w.__bf;
+    };
+  }, [gl, scene, camera, advance]);
+
+  return null;
+}
+
 export default function BattlefieldApp() {
   const tier = useDeviceTier();
   const [mounted, setMounted] = useState(false);
@@ -26,7 +52,27 @@ export default function BattlefieldApp() {
   const lowPower = useBattleStore((s) => s.lowPower);
   const setLowPower = useBattleStore((s) => s.setLowPower);
 
-  useEffect(() => setMounted(true), []);
+  const [bench, setBench] = useState(false);
+
+  /**
+   * Render resolution, adjusted at runtime.
+   *
+   * A fixed ceiling can't work across monitors: at device pixel ratio 2 on a
+   * large display the scene shades four times as many pixels as at 1, and the
+   * transparent ordnance overdraws several of those layers. Rather than guess,
+   * start conservative and let the measured frame rate decide — a slightly
+   * softer image at a steady 60 beats a sharp one that stutters.
+   */
+  const [dpr, setDpr] = useState(1);
+
+  useEffect(() => {
+    setMounted(true);
+    setBench(new URLSearchParams(window.location.search).has('bench'));
+  }, []);
+
+  useEffect(() => {
+    if (tier.ready) setDpr(Math.min(1.25, tier.maxDpr));
+  }, [tier.ready, tier.maxDpr]);
 
   // Adopt the detected device tier once, as a default the user can override.
   const [tierApplied, setTierApplied] = useState(false);
@@ -54,8 +100,10 @@ export default function BattlefieldApp() {
         <Canvas
           className="canvas"
           shadows={!lowPower}
-          dpr={[1, tier.maxDpr]}
-          camera={{ position: [0, 78, 96], fov: 46, near: 0.4, far: 900 }}
+          dpr={dpr}
+          // Closer than it used to sit: with the scenery gone there is nothing
+          // to look at out there, and the armies are the point.
+          camera={{ position: [0, 58, 74], fov: 46, near: 0.4, far: 620 }}
           gl={{
             antialias: !lowPower,
             powerPreference: 'high-performance',
@@ -69,7 +117,15 @@ export default function BattlefieldApp() {
             });
           }}
         >
+          {/* Trades resolution for frame rate, in both directions: drop when
+              frames are being missed, climb back once there is headroom. */}
+          <PerformanceMonitor
+            factor={0.6}
+            onDecline={() => setDpr((d) => Math.max(0.7, Math.round((d - 0.25) * 100) / 100))}
+            onIncline={() => setDpr((d) => Math.min(tier.maxDpr, Math.round((d + 0.25) * 100) / 100))}
+          />
           <Scene lowPower={lowPower} />
+          {bench && <BenchHandle />}
         </Canvas>
       )}
 

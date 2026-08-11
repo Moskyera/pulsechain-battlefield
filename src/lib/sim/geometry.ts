@@ -201,11 +201,20 @@ export function tankGeometry(): BufferGeometry {
   const wheels: BufferGeometry[] = [];
   for (let i = 0; i < 6; i++) {
     for (const z of [-0.58, 0.58]) {
-      const wg = new CylinderGeometry(0.22, 0.22, 0.2, 10);
+      const wg = new CylinderGeometry(0.22, 0.22, 0.2, 12);
       wg.rotateX(Math.PI / 2);
       wg.translate(-0.85 + i * 0.34, 0.24, z);
       wheels.push(paint(wg, '#0e1013'));
     }
+  }
+
+  // Drive sprocket and idler, one at each end of the run — the shapes that make
+  // a track look driven rather than painted on.
+  for (const [x, z] of [[-1.12, -0.6], [-1.12, 0.6], [1.12, -0.6], [1.12, 0.6]] as const) {
+    const s = new CylinderGeometry(0.28, 0.28, 0.24, 12);
+    s.rotateX(Math.PI / 2);
+    s.translate(x, 0.3, z);
+    wheels.push(paint(s, '#191c21'));
   }
 
   const parts: BufferGeometry[] = [
@@ -236,6 +245,25 @@ export function tankGeometry(): BufferGeometry {
     // Stowage and spare track links
     boxPart(PACK, 0.42, 0.24, 0.78, -0.86, 1.02, 0),
     boxPart(STEEL, 0.5, 0.1, 0.14, 0.5, 0.95, -0.5),
+
+    // Side skirts over the running gear
+    boxPart(STEEL, 2.0, 0.3, 0.06, 0, 0.62, -0.82),
+    boxPart(STEEL, 2.0, 0.3, 0.06, 0, 0.62, 0.82),
+
+    // Turret bustle rack and a commander's machine gun beside the hatch
+    boxPart('#2a2f36', 0.4, 0.26, 0.8, -0.78, 1.2, 0),
+    boxPart(STEEL, 0.42, 0.06, 0.06, -0.28, 1.62, 0.28),
+    boxPart(STEEL, 0.12, 0.14, 0.1, -0.46, 1.58, 0.28),
+
+    // Exhaust louvres and headlights: small, but they break up flat slabs.
+    boxPart('#15181c', 0.16, 0.16, 0.3, -1.0, 0.86, -0.36),
+    boxPart('#15181c', 0.16, 0.16, 0.3, -1.0, 0.86, 0.36),
+    boxPart('#c9cdd2', 0.06, 0.12, 0.14, 1.06, 0.72, -0.36),
+    boxPart('#c9cdd2', 0.06, 0.12, 0.14, 1.06, 0.72, 0.36),
+
+    // Tow hooks on the glacis
+    boxPart(STEEL, 0.14, 0.08, 0.08, 1.08, 0.5, -0.24),
+    boxPart(STEEL, 0.14, 0.08, 0.08, 1.08, 0.5, 0.24),
   ];
 
   tankCache = merge(parts);
@@ -249,18 +277,23 @@ export function tankGeometry(): BufferGeometry {
 export function rocketGeometry(): BufferGeometry {
   if (rocketCache) return rocketCache;
 
-  const body = new CylinderGeometry(0.13, 0.13, 0.8, 9);
+  const body = new CylinderGeometry(0.13, 0.13, 0.8, 12);
   body.rotateX(Math.PI / 2);
 
-  const band = new CylinderGeometry(0.145, 0.145, 0.12, 9);
+  const band = new CylinderGeometry(0.145, 0.145, 0.12, 12);
   band.rotateX(Math.PI / 2);
   band.translate(0, 0, 0.1);
 
-  const nose = new ConeGeometry(0.13, 0.4, 9);
+  // Second band aft, so the body isn't one blank tube.
+  const band2 = new CylinderGeometry(0.142, 0.142, 0.08, 12);
+  band2.rotateX(Math.PI / 2);
+  band2.translate(0, 0, -0.22);
+
+  const nose = new ConeGeometry(0.13, 0.4, 12);
   nose.rotateX(Math.PI / 2);
   nose.translate(0, 0, 0.6);
 
-  const nozzle = new ConeGeometry(0.12, 0.16, 9);
+  const nozzle = new ConeGeometry(0.12, 0.16, 12);
   nozzle.rotateX(-Math.PI / 2);
   nozzle.translate(0, 0, -0.44);
 
@@ -270,11 +303,18 @@ export function rocketGeometry(): BufferGeometry {
     fin.translate(0, 0.19, -0.3);
     fin.rotateZ((i / 4) * Math.PI * 2);
     fins.push(paint(fin, '#8d9299'));
+
+    // Forward canards: the detail that reads as "guided" at close zoom.
+    const canard = new BoxGeometry(0.03, 0.14, 0.13);
+    canard.translate(0, 0.15, 0.3);
+    canard.rotateZ((i / 4) * Math.PI * 2 + Math.PI / 4);
+    fins.push(paint(canard, '#a7adb4'));
   }
 
   rocketCache = merge([
     paint(body, '#d8dde3'),
     paint(band, '#b23a3a'),
+    paint(band2, '#7d848c'),
     paint(nose, '#2f3338'),
     paint(nozzle, '#4a4f55'),
     ...fins,
@@ -325,6 +365,22 @@ export function launcherGeometry(): BufferGeometry {
     // launcher cradle the tubes sit in
     boxPart('#3a4149', 1.15, 0.2, 1.0, -0.42, 0.72, 0, { z: 0.5 }),
     ...rack,
+
+    // Mudguards over each axle
+    boxPart('#262b31', 0.5, 0.06, 0.16, -0.7, 0.58, -0.5),
+    boxPart('#262b31', 0.5, 0.06, 0.16, -0.7, 0.58, 0.5),
+    boxPart('#262b31', 0.5, 0.06, 0.16, 0.72, 0.58, -0.5),
+    boxPart('#262b31', 0.5, 0.06, 0.16, 0.72, 0.58, 0.5),
+
+    // Hydraulic ram holding the rack up, and the outrigger legs it rests on
+    boxPart('#5a626b', 0.5, 0.09, 0.09, -0.1, 0.86, -0.3, { z: 0.5 }),
+    boxPart('#5a626b', 0.5, 0.09, 0.09, -0.1, 0.86, 0.3, { z: 0.5 }),
+    boxPart('#22262b', 0.12, 0.34, 0.12, -1.0, 0.28, -0.52),
+    boxPart('#22262b', 0.12, 0.34, 0.12, -1.0, 0.28, 0.52),
+
+    // Reload crate on the bed and a cab step
+    boxPart(PACK, 0.42, 0.22, 0.7, 0.25, 0.66, 0),
+    boxPart('#15181c', 0.24, 0.05, 0.5, 0.72, 0.5, 0),
   ];
 
   launcherCache = merge(parts);

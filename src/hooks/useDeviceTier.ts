@@ -38,7 +38,10 @@ export function useDeviceTier(): DeviceTier {
       return {
         lowPower,
         compact,
-        maxDpr: lowPower ? 1.25 : Math.min(2, window.devicePixelRatio || 1),
+        // Ceiling only — the runtime performance monitor decides where inside
+        // this range the scene actually renders. Above ~1.75 the extra pixels
+        // buy nothing visible on a battlefield this size and cost plenty.
+        maxDpr: lowPower ? 1 : Math.min(1.75, window.devicePixelRatio || 1),
         ready: true,
       };
     };

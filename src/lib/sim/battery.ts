@@ -26,12 +26,14 @@ export interface BatteryPiece {
  * centre, light armour on the shoulders, rocket artillery anchoring the flanks.
  */
 export const BATTERY: readonly BatteryPiece[] = [
-  { kind: 'launcher', scale: 1.9, lane: -0.86 },
-  { kind: 'tank', scale: 1.6, lane: -0.52 },
-  { kind: 'tank', scale: 2.2, lane: -0.17 },
-  { kind: 'tank', scale: 2.2, lane: 0.17 },
-  { kind: 'tank', scale: 1.6, lane: 0.52 },
-  { kind: 'launcher', scale: 1.9, lane: 0.86 },
+  { kind: 'launcher', scale: 1.9, lane: -0.9 },
+  { kind: 'tank', scale: 1.5, lane: -0.64 },
+  { kind: 'tank', scale: 2.0, lane: -0.38 },
+  { kind: 'tank', scale: 2.2, lane: -0.13 },
+  { kind: 'tank', scale: 2.2, lane: 0.13 },
+  { kind: 'tank', scale: 2.0, lane: 0.38 },
+  { kind: 'tank', scale: 1.5, lane: 0.64 },
+  { kind: 'launcher', scale: 1.9, lane: 0.9 },
 ];
 
 /** How far behind the front line the whole battery sits. */

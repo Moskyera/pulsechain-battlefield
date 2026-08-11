@@ -2,13 +2,12 @@
 
 import { useRef, type ReactNode } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { AdaptiveDpr, OrbitControls, Stars } from '@react-three/drei';
+import { OrbitControls } from '@react-three/drei';
 import type { Group } from 'three';
 import { runtime } from '@/lib/sim/runtime';
 import { field } from '@/lib/sim/field';
-import { COLORS, FIELD_HALF_Z } from '@/lib/sim/layout';
+import { FIELD_HALF_Z } from '@/lib/sim/layout';
 import { Terrain } from './Terrain';
-import { Environment } from './Environment';
 import { Emplacements } from './Emplacements';
 import { Bases } from './Bases';
 import { Armies } from './Armies';
@@ -53,49 +52,59 @@ function ShakeGroup({ children }: { children: ReactNode }) {
   return <group ref={ref}>{children}</group>;
 }
 
+/**
+ * The battlefield, and nothing else.
+ *
+ * Everything here earns its frame time by showing real data: the ground, the
+ * held territory, the armies, the gun line and the ordnance. The scenery that
+ * used to ring the valley — ridgelines, tree lines, buildings, rocks, smoke
+ * columns, a sky dome and a starfield — was pure decoration costing 13 draw
+ * calls and ~25k triangles a frame, plus its own shadow casters. It is gone;
+ * the fog now closes the horizon for free.
+ *
+ * Lighting is deliberately minimal for the same reason. Four point lights (two
+ * over the field, one per base) meant every standard material paid for four
+ * extra light evaluations on every pixel, at every resolution. The team read
+ * comes from emissive materials and the tinted territory planes instead, which
+ * cost nothing per pixel.
+ */
 export function Scene({ lowPower }: { lowPower: boolean }) {
   return (
     <>
-      {/* Warm daylight haze. The fog colour matches the sky dome's horizon so
-          the ridgelines dissolve into it instead of hitting a hard edge — and
-          the far distance has to stay inside the fog range or the hills simply
-          render as a black band. */}
+      {/* Warm daylight haze. With the ridgelines gone the fog *is* the horizon:
+          the ground plane dissolves into it well before its far edge. */}
       <color attach="background" args={['#c6bca6']} />
-      <fog attach="fog" args={['#c6bca6', 110, 430]} />
+      {/* The default camera sits ~94 units out and the field's far edge ~112,
+          so the haze starts past that and closes completely well before the
+          ground plane ends: the horizon is a band of light, not a wall of
+          dirt. */}
+      <fog attach="fog" args={['#c6bca6', 118, 190]} />
 
-      {/* Lighting rig.
-          A warm key from high front-left models the troops, a cool sky fill
-          keeps the shadows from going black, and two dim coloured rims — green
-          from the left, red from the right — separate the armies at a glance
-          without tinting the soldiers themselves. */}
-      <ambientLight intensity={0.55} />
-      <hemisphereLight args={['#5a7ea6', '#141a12', 1.0]} />
+      {/* Lighting rig: a warm key from high front-left models the troops, a cool
+          sky fill keeps the shadows from going black. No point lights. */}
+      <ambientLight intensity={0.62} />
+      <hemisphereLight args={['#5a7ea6', '#141a12', 1.05]} />
       <directionalLight
         position={[-26, 46, 34]}
-        intensity={2.1}
+        intensity={2.2}
         color="#ffeed8"
         castShadow={!lowPower}
-        shadow-mapSize-width={lowPower ? 512 : 2048}
-        shadow-mapSize-height={lowPower ? 512 : 2048}
-        shadow-camera-left={-FIELD_HALF_X - 12}
-        shadow-camera-right={FIELD_HALF_X + 12}
-        shadow-camera-top={FIELD_HALF_Z + 24}
-        shadow-camera-bottom={-FIELD_HALF_Z - 24}
-        shadow-camera-far={180}
+        // 1024 is plenty now that only the units and bases cast: the shadow
+        // camera covers the field alone, so texel density is unchanged from the
+        // old 2048 map that also had to cover a valley full of trees.
+        shadow-mapSize-width={lowPower ? 512 : 1024}
+        shadow-mapSize-height={lowPower ? 512 : 1024}
+        shadow-camera-left={-FIELD_HALF_X - 8}
+        shadow-camera-right={FIELD_HALF_X + 8}
+        shadow-camera-top={FIELD_HALF_Z + 16}
+        shadow-camera-bottom={-FIELD_HALF_Z - 16}
+        shadow-camera-near={1}
+        shadow-camera-far={140}
         shadow-bias={-0.0012}
       />
-      <directionalLight position={[30, 18, -26]} intensity={0.5} color="#9fc4ff" />
-      {!lowPower && (
-        <>
-          <pointLight position={[-FIELD_HALF_X * 0.7, 9, 0]} color={COLORS.buy} intensity={70} distance={52} decay={2} />
-          <pointLight position={[FIELD_HALF_X * 0.7, 9, 0]} color={COLORS.sell} intensity={70} distance={52} decay={2} />
-        </>
-      )}
-
-      {!lowPower && <Stars radius={260} depth={60} count={1800} factor={5} saturation={0} fade speed={0.4} />}
+      <directionalLight position={[30, 18, -26]} intensity={0.55} color="#9fc4ff" />
 
       <ShakeGroup>
-        <Environment lowPower={lowPower} />
         <Terrain lowPower={lowPower} />
         <Bases lowPower={lowPower} />
         <Emplacements lowPower={lowPower} />
@@ -108,8 +117,8 @@ export function Scene({ lowPower }: { lowPower: boolean }) {
         makeDefault
         enablePan={false}
         target={[0, 1.5, 0]}
-        minDistance={14}
-        maxDistance={180}
+        minDistance={12}
+        maxDistance={120}
         minPolarAngle={0.15}
         maxPolarAngle={Math.PI / 2 - 0.06}
         enableDamping
@@ -117,8 +126,6 @@ export function Scene({ lowPower }: { lowPower: boolean }) {
         rotateSpeed={0.6}
         zoomSpeed={0.8}
       />
-
-      <AdaptiveDpr pixelated />
     </>
   );
 }
