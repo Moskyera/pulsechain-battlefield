@@ -77,6 +77,17 @@ const MARCH_SPEED = 3.1;
 const STRIDE = 1.15;
 /** Radians a leg swings at full running speed. */
 const SWING_MAX = 0.72;
+/**
+ * Getting under way and pulling up.
+ *
+ * A man used to jump from a standstill to full speed on one frame and stop the
+ * same way, which is what made the movement look like it was snapping between
+ * states. He now builds speed over roughly a third of a second and eases down
+ * into his post, so the same move-and-hold behaviour reads as running rather
+ * than teleporting.
+ */
+const ACCEL = 16;
+const BRAKE = 22;
 
 /** Seconds between one soldier's bursts (before per-soldier variation). */
 const FIRE_INTERVAL_MIN = 1.6;
@@ -209,6 +220,8 @@ interface SideState {
   yaw: Float32Array;
   /** Metres per second right now, for leg swing, lean and bob. */
   speed: Float32Array;
+  /** Actual carried velocity, so nobody starts or stops on a single frame. */
+  vel: Float32Array;
   /**
    * Low-passed version of the push/give-ground drive.
    *
@@ -242,6 +255,7 @@ function makeSideState(capacity: number): SideState {
     gait: new Float32Array(capacity),
     yaw: new Float32Array(capacity),
     speed: new Float32Array(capacity),
+    vel: new Float32Array(capacity),
     drive: 0,
   };
 }
@@ -629,19 +643,30 @@ function paintSide(a: PaintArgs): void {
     const marching = slot.phase === 'arriving';
     if (marching && gap > 0.6) state.moving[i] = 1;
 
+    // Urgency rises smoothly with how hard the line is moving and how far out
+    // of place he is, so nobody flips between a march and a sprint on a frame
+    // boundary.
+    const urgency = marching
+      ? 1
+      : Math.min(1, Math.max(Math.abs(drive) * 1.6, (gap - 2) / 6));
+    const pace =
+      (MARCH_SPEED + (RUN_SPEED - MARCH_SPEED) * Math.max(0, urgency)) *
+      c.pace *
+      (intense ? 1.15 : 1);
+
+    // Ease down into the post rather than stopping dead on it: the fastest he
+    // may still be going at this range and still pull up in time.
+    const approach = Math.sqrt(Math.max(0, 2 * BRAKE * Math.max(0, gap - 0.12)));
+    const wanted = state.moving[i] === 1 ? Math.min(pace, approach) : 0;
+
+    const rate = wanted > state.vel[i] ? ACCEL : BRAKE;
+    const step = rate * dt;
+    state.vel[i] += Math.max(-step, Math.min(step, wanted - state.vel[i]));
+    if (state.vel[i] < 0.02) state.vel[i] = 0;
+
     let covered = 0;
-    if (state.moving[i] === 1 && gap > 0.0001) {
-      // Urgency rises smoothly with how hard the line is moving and how far out
-      // of place he is, so nobody flips between a march and a sprint on a
-      // frame boundary.
-      const urgency = marching
-        ? 1
-        : Math.min(1, Math.max(Math.abs(drive) * 1.6, (gap - 2) / 6));
-      const pace =
-        (MARCH_SPEED + (RUN_SPEED - MARCH_SPEED) * Math.max(0, urgency)) *
-        c.pace *
-        (intense ? 1.15 : 1);
-      covered = Math.min(gap, pace * dt);
+    if (state.vel[i] > 0 && gap > 0.0001) {
+      covered = Math.min(gap, state.vel[i] * dt);
       x += (dx / gap) * covered;
       z += (dz / gap) * covered;
     }
