@@ -44,7 +44,6 @@ export function Combat({ lowPower }: { lowPower: boolean }) {
   const sellBlasts = useRef<InstancedMesh>(null);
   const buyRings = useRef<InstancedMesh>(null);
   const sellRings = useRef<InstancedMesh>(null);
-  const smoke = useRef<InstancedMesh>(null);
 
   const dummy = useMemo(() => new Object3D(), []);
   const cur = useMemo(() => new Vector3(), []);
@@ -221,7 +220,6 @@ export function Combat({ lowPower }: { lowPower: boolean }) {
     /* -- 6. Explosions -------------------------------------------------- */
     let buyB = 0;
     let sellB = 0;
-    let smokeIdx = 0;
     for (const e of combat.explosions) {
       if (!e.active) continue;
       const isBuy = e.side === 'buy';
@@ -253,24 +251,9 @@ export function Combat({ lowPower }: { lowPower: boolean }) {
         ringMesh.setColorAt(idx, tint);
       }
 
-      // Smoke: a dark column that climbs and spreads after the fireball has
-      // gone. Opacity can't vary per instance on a shared material, so it
-      // grows then shrinks away instead of fading — which reads the same.
-      const smokeMesh = smoke.current;
-      if (smokeMesh && smokeIdx < blastCap * 2) {
-        const puff = e.t < 0.15 ? e.t / 0.15 : Math.max(0, 1 - (e.t - 0.15) / 0.85);
-        dummy.position.set(e.x, e.y + e.radius * (0.5 + e.t * 1.6), e.z);
-        dummy.rotation.set(0, 0, 0);
-        dummy.scale.setScalar(Math.max(0.001, e.radius * 0.5 * puff * (0.6 + e.t)));
-        dummy.updateMatrix();
-        smokeMesh.setMatrixAt(smokeIdx, dummy.matrix);
-        smokeIdx++;
-      }
-
       if (isBuy) buyB++;
       else sellB++;
     }
-    commit(smoke.current, smokeIdx);
     commitColored(buyBlasts.current, buyB);
     commitColored(sellBlasts.current, sellB);
     commitColored(buyRings.current, buyB);
@@ -360,19 +343,6 @@ export function Combat({ lowPower }: { lowPower: boolean }) {
           blending={AdditiveBlending}
           depthWrite={false}
           toneMapped={false}
-        />
-      </instancedMesh>
-
-      {/* Smoke — shared by both sides; smoke has no team. */}
-      <instancedMesh ref={smoke} args={[undefined, undefined, blastCap * 2]} frustumCulled={false}>
-        <sphereGeometry args={[1, lowPower ? 6 : 8, lowPower ? 5 : 6]} />
-        <meshStandardMaterial
-          color="#2b2f33"
-          transparent
-          opacity={0.42}
-          depthWrite={false}
-          roughness={1}
-          metalness={0}
         />
       </instancedMesh>
 

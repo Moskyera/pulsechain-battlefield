@@ -10,6 +10,7 @@ import { FIELD_HALF_Z } from '@/lib/sim/layout';
 import { Terrain } from './Terrain';
 import { Cinematics } from './Cinematics';
 import { Scars } from './Scars';
+import { Smoke } from './Smoke';
 import { Emplacements } from './Emplacements';
 import { Bases } from './Bases';
 import { Armies } from './Armies';
@@ -103,6 +104,12 @@ export function Scene({ lowPower }: { lowPower: boolean }) {
         shadow-camera-near={1}
         shadow-camera-far={140}
         shadow-bias={-0.0012}
+        // Softens the shadow edge. drei's PCSS, which would vary the softness
+        // with distance from the caster, injects shader code that calls
+        // unpackRGBAToDepth on what is a depth texture in three 0.185: every
+        // material then fails to compile and the whole scene renders white.
+        // This is the part of it that works.
+        shadow-radius={4}
       />
       <directionalLight position={[30, 18, -26]} intensity={0.55} color="#9fc4ff" />
 
@@ -134,6 +141,7 @@ export function Scene({ lowPower }: { lowPower: boolean }) {
         <Armies lowPower={lowPower} />
         <FrontLine />
         <Combat lowPower={lowPower} />
+        <Smoke lowPower={lowPower} />
       </ShakeGroup>
 
       <OrbitControls

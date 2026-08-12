@@ -99,7 +99,7 @@ export default function BattlefieldApp() {
       {mounted && !glError && (
         <Canvas
           className="canvas"
-          shadows={!lowPower}
+          shadows={lowPower ? false : 'soft'}
           // The effect chain does its own ACES pass at the end, so the renderer
           // must not tone map first: doing both crushes the image twice. The
           // light scene has no chain, so it keeps the renderer's own.

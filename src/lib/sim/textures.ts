@@ -130,6 +130,74 @@ export function detailTexture(key: string, seed: number, opts: DetailOptions = {
   return tex;
 }
 
+/**
+ * A single soft puff, for smoke billboards.
+ *
+ * White, with the shape carried entirely in the alpha channel: a soft radial
+ * falloff broken up by noise so the edge is ragged rather than a clean circle.
+ * Several of these overlapping at different sizes and speeds is what turns a
+ * hard-edged sphere into something that reads as smoke.
+ */
+export function puffTexture(): Texture | null {
+  if (typeof document === 'undefined') return null;
+
+  const cached = cache.get('puff');
+  if (cached) return cached;
+
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  const rnd = lcg(0x2f8ac1);
+  const img = ctx.createImageData(size, size);
+  const d = img.data;
+  const mid = size / 2;
+
+  // Lumps in the outline, so no two puffs read as the same circle.
+  const lobes = Array.from({ length: 7 }, () => ({
+    a: rnd() * Math.PI * 2,
+    r: 0.16 + rnd() * 0.2,
+    w: 0.5 + rnd() * 0.7,
+  }));
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = (x - mid) / mid;
+      const dy = (y - mid) / mid;
+      const dist = Math.hypot(dx, dy);
+      const ang = Math.atan2(dy, dx);
+
+      let edge = 0.82;
+      for (const l of lobes) {
+        const delta = Math.cos(ang - l.a);
+        edge += l.r * Math.pow(Math.max(0, delta), 2 / l.w) - l.r * 0.35;
+      }
+
+      // Soft all the way in, so overlapping puffs blend instead of banding.
+      let a = 1 - dist / Math.max(0.2, edge);
+      a = Math.max(0, Math.min(1, a));
+      a = a * a * (3 - 2 * a);
+      a *= 0.82 + rnd() * 0.18;
+
+      const i = (y * size + x) * 4;
+      d[i] = 255;
+      d[i + 1] = 255;
+      d[i + 2] = 255;
+      d[i + 3] = a * 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+
+  const tex = new CanvasTexture(canvas);
+  tex.colorSpace = SRGBColorSpace;
+  tex.anisotropy = 2;
+  cache.set('puff', tex);
+  return tex;
+}
+
 /* ------------------------------------------------------------------ relief */
 
 /**
