@@ -35,6 +35,7 @@ const STATE_CLASS: Record<SourceState, string> = {
  */
 export function StatusBar() {
   const sources = useBattleStore((s) => s.sources);
+  const stats = useBattleStore((s) => s.renderStats);
   const chainHead = useBattleStore((s) => s.chainHead);
   const pools = useBattleStore((s) => s.pools);
 
@@ -101,6 +102,17 @@ export function StatusBar() {
             .join(' · ')}
         </div>
       )}
-    </div>
+    
+      {/* What the renderer is actually doing. Slowness reported as numbers is
+          something that can be acted on; slowness reported as a feeling is not. */}
+      {stats.fps > 0 && (
+        <span
+          className={`src-chip ${stats.fps >= 50 ? 'ok' : stats.fps >= 30 ? 'warn' : 'bad'}`}
+          title={`Rendering ${stats.width}x${stats.height} pixels at ${stats.dpr}x device pixel ratio, capped at 60fps and dropped to 8 when the window is not focused.`}
+        >
+          {stats.fps}FPS · {stats.width}x{stats.height}
+        </span>
+      )}
+</div>
   );
 }

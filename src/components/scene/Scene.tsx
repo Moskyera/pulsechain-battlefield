@@ -73,6 +73,9 @@ function ShakeGroup({ children }: { children: ReactNode }) {
  * cost nothing per pixel.
  */
 export function Scene({ lowPower, fx }: { lowPower: boolean; fx: FxLevel }) {
+  // Casting has to match the renderer, or every caster pays for a shadow map
+  // that is never sampled.
+  const shadows = !lowPower && fx !== 'off';
   return (
     <>
       {/* Warm daylight haze. With the ridgelines gone the fog *is* the horizon:
@@ -92,7 +95,7 @@ export function Scene({ lowPower, fx }: { lowPower: boolean; fx: FxLevel }) {
         position={[-26, 46, 34]}
         intensity={2.2}
         color="#ffeed8"
-        castShadow={!lowPower}
+        castShadow={shadows}
         // 1024 is plenty now that only the units and bases cast: the shadow
         // camera covers the field alone, so texel density is unchanged from the
         // old 2048 map that also had to cover a valley full of trees.
@@ -120,7 +123,7 @@ export function Scene({ lowPower, fx }: { lowPower: boolean; fx: FxLevel }) {
           metal brighter or darker, never reflective, so armour read as painted
           cardboard; this is what gives it something to reflect. Rendered once
           at 128px, so it costs nothing per frame. */}
-      {!lowPower && (
+      {shadows && (
         <Environment resolution={128} frames={1}>
           <Lightformer intensity={2.4} color="#fff1d8" position={[-14, 14, 8]} scale={[14, 14, 1]} />
           <Lightformer intensity={0.8} color="#a8c8ff" position={[14, 9, -10]} scale={[16, 10, 1]} />
@@ -135,14 +138,14 @@ export function Scene({ lowPower, fx }: { lowPower: boolean; fx: FxLevel }) {
       )}
 
       <ShakeGroup>
-        <Terrain lowPower={lowPower} />
-        <Scars lowPower={lowPower} />
-        <Bases lowPower={lowPower} />
-        <Emplacements lowPower={lowPower} />
-        <Armies lowPower={lowPower} />
+        <Terrain lowPower={lowPower || !shadows} />
+        <Scars lowPower={lowPower || !shadows} />
+        <Bases lowPower={lowPower || !shadows} />
+        <Emplacements lowPower={lowPower || !shadows} />
+        <Armies lowPower={lowPower || !shadows} />
         <FrontLine />
-        <Combat lowPower={lowPower} />
-        <Smoke lowPower={lowPower} />
+        <Combat lowPower={lowPower || !shadows} />
+        <Smoke lowPower={lowPower || !shadows} />
       </ShakeGroup>
 
       <OrbitControls

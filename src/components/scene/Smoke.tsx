@@ -29,10 +29,10 @@ import { hashSigned, hashUnit } from '@/lib/util/hash';
  * trick the scars use for fading into the dirt.
  */
 
-const PUFFS_PER_BLAST = 5;
-const CAPACITY = 220;
-const LIFE_MIN = 7;
-const LIFE_SPAN = 5;
+const PUFFS_PER_BLAST = 4;
+const CAPACITY = 96;
+const LIFE_MIN = 5;
+const LIFE_SPAN = 4;
 
 interface Puff {
   x: number;
@@ -62,8 +62,8 @@ export function Smoke({ lowPower }: { lowPower: boolean }) {
   const tint = useMemo(() => new Color(), []);
   const texture = useMemo(() => puffTexture(), []);
 
-  const capacity = lowPower ? 90 : CAPACITY;
-  const perBlast = lowPower ? 3 : PUFFS_PER_BLAST;
+  const capacity = lowPower ? 40 : CAPACITY;
+  const perBlast = lowPower ? 2 : PUFFS_PER_BLAST;
 
   const puffs = useMemo<Puff[]>(
     () =>

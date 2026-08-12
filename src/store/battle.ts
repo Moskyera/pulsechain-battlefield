@@ -157,6 +157,8 @@ export interface BattleStore {
   lowPower: boolean;
   /** Image treatment level. Forced to 'off' by the light scene. */
   fx: FxLevel;
+  /** What the renderer is actually doing, so slowness can be reported in numbers. */
+  renderStats: { fps: number; width: number; height: number; dpr: number };
   showHud: boolean;
   /** Market feed (the transaction list) can be hidden on its own. */
   showFeed: boolean;
@@ -194,6 +196,7 @@ export interface BattleStore {
   setTierScale: (scale: TierScale) => void;
   setLowPower: (value: boolean) => void;
   cycleFx: () => void;
+  setRenderStats: (stats: { fps: number; width: number; height: number; dpr: number }) => void;
 }
 
 /**
@@ -278,6 +281,7 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
   soundEnabled: false,
   lowPower: false,
   fx: 'off',
+  renderStats: { fps: 0, width: 0, height: 0, dpr: 1 },
   showHud: true,
   showFeed: true,
   showPanels: true,
@@ -419,6 +423,15 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
     set((s) => ({
       fx: s.fx === 'lite' ? 'full' : s.fx === 'full' ? 'off' : 'lite',
     })),
+
+  // Written once a second from the render loop; skipped when nothing moved so
+  // a steady frame rate does not re-render the HUD every second for nothing.
+  setRenderStats: (renderStats) =>
+    set((s) =>
+      s.renderStats.fps === renderStats.fps && s.renderStats.width === renderStats.width
+        ? s
+        : { renderStats },
+    ),
 }));
 
 /** Recompute the rolling window on a timer so it decays even in a quiet market. */

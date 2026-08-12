@@ -55,27 +55,42 @@ function BenchHandle() {
  *
  * R3F renders on demand; this drives that demand at a fixed rate.
  */
-function FrameLimiter({ fps }: { fps: number }) {
+function FrameLimiter({ fps, onSample }: { fps: number; onSample: (fps: number) => void }) {
   const invalidate = useThree((s) => s.invalidate);
 
   useEffect(() => {
     let frame = 0;
     let last = -Infinity;
-    // A hair under the interval, so a monitor running near the cap is not
-    // pushed to alternate between one frame and two.
-    const step = 1000 / fps - 1.5;
+    let drawn = 0;
+    let windowStart = -Infinity;
 
     const tick = (now: number) => {
+      // A window left open on a second monitor while you work in something
+      // else was still rendering at the full rate. Unfocused, it idles.
+      const active = document.hasFocus();
+      const target = active ? fps : 8;
+      // A hair under the interval, so a monitor running near the cap is not
+      // pushed to alternate between one frame and two.
+      const step = 1000 / target - 1.5;
+
       if (now - last >= step) {
         last = now;
+        drawn++;
         invalidate();
       }
+
+      if (now - windowStart >= 1000) {
+        if (windowStart > 0) onSample(drawn);
+        windowStart = now;
+        drawn = 0;
+      }
+
       frame = requestAnimationFrame(tick);
     };
 
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [fps, invalidate]);
+  }, [fps, invalidate, onSample]);
 
   return null;
 }
@@ -102,6 +117,8 @@ export default function BattlefieldApp() {
    * softer image at a steady 60 beats a sharp one that stutters.
    */
   const [dpr, setDpr] = useState(1);
+  const [, setRenderFps] = useState(0);
+  const setStats = useBattleStore((s) => s.setRenderStats);
 
   useEffect(() => {
     setMounted(true);
@@ -117,7 +134,24 @@ export default function BattlefieldApp() {
    * bad trade on any screen and a punishing one on a large screen.
    */
   const chainOn = !lowPower && fx !== 'off';
-  const dprCeiling = chainOn ? 1 : tier.maxDpr;
+  /**
+   * Shadows are a second pass over every casting object in the scene, every
+   * frame, before anything is shaded. They are the most expensive thing left
+   * once the effect chain is off, so they now travel with it: the plain scene
+   * is genuinely plain, and turning the picture on brings them back.
+   */
+  const shadowsOn = chainOn;
+  /**
+   * Never above one rendered pixel per screen pixel.
+   *
+   * This was allowed to climb to 1.75x, which triples the pixel count on a
+   * high-density display, and every one of those pixels pays for shadows,
+   * lighting and any effect that is running. On a scene of flat-shaded blocks
+   * that buys almost no visible sharpness, and it was the largest remaining
+   * cost by some distance. The monitor below can still drop it under 1 when a
+   * machine is struggling; it can no longer go above.
+   */
+  const dprCeiling = 1;
 
   useEffect(() => {
     if (tier.ready) setDpr(Math.min(dprCeiling, tier.maxDpr));
@@ -151,7 +185,7 @@ export default function BattlefieldApp() {
           // Rendering is driven by FrameLimiter rather than by the display's
           // refresh rate. See the note there.
           frameloop="demand"
-          shadows={lowPower ? false : 'soft'}
+          shadows={shadowsOn ? 'soft' : false}
           // The effect chain does its own ACES pass at the end, so the renderer
           // must not tone map first: doing both crushes the image twice. With
           // no chain there is nothing downstream to do it, so the renderer
@@ -180,8 +214,21 @@ export default function BattlefieldApp() {
             factor={0.6}
             onDecline={() => setDpr((d) => Math.max(0.7, Math.round((d - 0.25) * 100) / 100))}
             onIncline={() => setDpr((d) => Math.min(dprCeiling, Math.round((d + 0.25) * 100) / 100))}
+            // Nothing to climb to: the ceiling is 1:1.
           />
-          <FrameLimiter fps={60} />
+          <FrameLimiter
+            fps={60}
+            onSample={(f) => {
+              setRenderFps(f);
+              const c = document.querySelector('canvas');
+              setStats({
+                fps: f,
+                width: c ? c.width : 0,
+                height: c ? c.height : 0,
+                dpr,
+              });
+            }}
+          />
           <Scene lowPower={lowPower} fx={lowPower ? 'off' : fx} />
           {bench && <BenchHandle />}
         </Canvas>

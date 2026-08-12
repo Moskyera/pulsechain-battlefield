@@ -24,7 +24,7 @@ import { drainBlasts, runtime } from '@/lib/sim/runtime';
  * ground and blends away without ever changing the material.
  */
 
-const SCAR_CAPACITY = 96;
+const SCAR_CAPACITY = 48;
 /** Seconds a scar takes to blend back into the dirt. */
 const SCAR_LIFE = 150;
 /** Burnt earth, and the terrain tone it eventually dissolves into. */
@@ -44,7 +44,7 @@ export function Scars({ lowPower }: { lowPower: boolean }) {
   const meshRef = useRef<InstancedMesh>(null);
   const dummy = useMemo(() => new Object3D(), []);
   const tint = useMemo(() => new Color(), []);
-  const capacity = lowPower ? 48 : SCAR_CAPACITY;
+  const capacity = lowPower ? 24 : SCAR_CAPACITY;
 
   const scars = useMemo<Scar[]>(
     () => Array.from({ length: capacity }, () => ({ x: 0, z: 0, radius: 0, born: -1, spin: 0 })),
