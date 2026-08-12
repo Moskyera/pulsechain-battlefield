@@ -46,7 +46,15 @@ function TierLegend() {
   );
 }
 
-export function Hud({ compact }: { compact: boolean }) {
+export function Hud({
+  compact,
+  software = false,
+  renderer = '',
+}: {
+  compact: boolean;
+  software?: boolean;
+  renderer?: string;
+}) {
   const showHud = useBattleStore((s) => s.showHud);
   const showFeed = useBattleStore((s) => s.showFeed);
   const showPanels = useBattleStore((s) => s.showPanels);
@@ -74,6 +82,20 @@ export function Hud({ compact }: { compact: boolean }) {
     <>
       <FlashOverlay />
       <BootOverlay />
+
+      {/* A browser that has fallen back to CPU rasterising still renders
+          everything, so nothing announces itself except the fans. Say it. */}
+      {software && (
+        <div className="software-warning" role="status">
+          <b>This browser is drawing without your graphics card.</b>
+          <span>
+            WebGL has fallen back to software rendering{renderer ? ` (${renderer})` : ''}, so every
+            frame is being drawn by the CPU. Restart the browser, and check that hardware
+            acceleration is enabled in its settings. The battlefield is running in its lightest
+            mode meanwhile.
+          </span>
+        </div>
+      )}
 
       <div className={['hud', showHud ? '' : 'hidden', compact ? 'compact' : ''].filter(Boolean).join(' ')}>
         <header className="hud-top">

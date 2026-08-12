@@ -1348,3 +1348,32 @@ button {
     animation: none;
   }
 }
+
+
+/* Shown only when the browser has fallen back to CPU rasterising. */
+.software-warning {
+  position: absolute;
+  top: 108px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 176, 32, 0.5);
+  border-radius: 4px;
+  background: rgba(28, 18, 4, 0.92);
+  color: #ffd591;
+  font-size: 11px;
+  line-height: 1.5;
+  pointer-events: none;
+}
+
+.software-warning b {
+  color: #ffb020;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 10px;
+}

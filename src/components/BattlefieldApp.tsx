@@ -239,7 +239,7 @@ export default function BattlefieldApp() {
         </div>
       )}
 
-      <Hud compact={tier.compact} />
+      <Hud compact={tier.compact} software={tier.software} renderer={tier.renderer} />
     </div>
   );
 }

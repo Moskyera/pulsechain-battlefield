@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { detectRenderer } from '@/lib/util/renderer';
 
 export interface DeviceTier {
   /** True for phones / tablets / low-core machines — drives the lighter scene. */
@@ -11,9 +12,20 @@ export interface DeviceTier {
   maxDpr: number;
   /** Resolved after mount; false during SSR so markup matches on hydration. */
   ready: boolean;
+  /** True when the browser is rasterising on the CPU rather than the GPU. */
+  software: boolean;
+  /** What the driver calls itself, for the warning banner. */
+  renderer: string;
 }
 
-const INITIAL: DeviceTier = { lowPower: false, compact: false, maxDpr: 2, ready: false };
+const INITIAL: DeviceTier = {
+  lowPower: false,
+  compact: false,
+  maxDpr: 2,
+  ready: false,
+  software: false,
+  renderer: '',
+};
 
 /**
  * Detects whether this machine should get the full battlefield or the light one.
@@ -33,9 +45,15 @@ export function useDeviceTier(): DeviceTier {
       const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
       const compact = width < 760;
-      const lowPower = compact || (coarse && width < 1100) || cores <= 4 || reducedMotion;
+      const gpu = detectRenderer();
+      // A CPU rasteriser cannot be reasoned with: it is the light scene or
+      // nothing, however many cores the machine has.
+      const lowPower =
+        gpu.software || compact || (coarse && width < 1100) || cores <= 4 || reducedMotion;
 
       return {
+        software: gpu.software,
+        renderer: gpu.name,
         lowPower,
         compact,
         // Ceiling only — the runtime performance monitor decides where inside
