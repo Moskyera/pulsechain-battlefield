@@ -41,8 +41,9 @@ export type BootState = 'idle' | 'resolving' | 'ready' | 'error';
  *   lite  bloom, grade, vignette and antialiasing. No second scene pass.
  *   off   no chain at all, and the renderer does its own tone mapping.
  *
- * Default is lite on purpose: the look survives, the second geometry pass
- * does not.
+ * Default is off. The chain is genuinely expensive on a large screen and the
+ * scene stands up without it, so it is something you switch on when you want
+ * the picture rather than something you have to find and switch off.
  */
 export type FxLevel = 'full' | 'lite' | 'off';
 
@@ -276,7 +277,7 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
   intense: false,
   soundEnabled: false,
   lowPower: false,
-  fx: 'lite',
+  fx: 'off',
   showHud: true,
   showFeed: true,
   showPanels: true,

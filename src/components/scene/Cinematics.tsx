@@ -79,7 +79,7 @@ export function Cinematics({ level }: { level: FxLevel }) {
   const withAo = level === 'full';
 
   return (
-    <EffectComposer multisampling={0} enableNormalPass={withAo}>
+    <EffectComposer multisampling={withAo ? 0 : 4} enableNormalPass={withAo}>
       {withAo ? ao : <></>}
       <Bloom
         // High enough that the tinted ground and the daylit dirt stay out of
@@ -89,12 +89,17 @@ export function Cinematics({ level }: { level: FxLevel }) {
         intensity={0.5}
         mipmapBlur
         radius={0.5}
+        resolutionScale={0.5}
       />
       <HueSaturation saturation={-0.05} />
       <BrightnessContrast brightness={0.06} contrast={0.09} />
       <Vignette offset={0.36} darkness={0.3} eskil={false} />
       <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
-      <SMAA />
+      {/* SMAA is three more full-screen passes. Where the composer can use the
+          hardware's own multisampling instead it does, and this is only kept
+          for the ambient-occlusion path, which needs a non-multisampled buffer
+          to read depth and normals from. */}
+      {withAo ? <SMAA /> : <></>}
     </EffectComposer>
   );
 }

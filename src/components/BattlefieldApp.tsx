@@ -43,6 +43,43 @@ function BenchHandle() {
   return null;
 }
 
+/**
+ * Frame cap.
+ *
+ * The scene was rendering on every animation frame the browser offered, which
+ * on a high refresh monitor means 144 or 240 full renders a second, each one
+ * paying for the whole effect chain. Nothing here needs that: the data arrives
+ * in blocks, the front line eases over seconds, and no eye reads a soldier's
+ * stride at 240Hz. Capping the render rate is worth more than any single
+ * optimisation in this file, because it divides the entire frame cost.
+ *
+ * R3F renders on demand; this drives that demand at a fixed rate.
+ */
+function FrameLimiter({ fps }: { fps: number }) {
+  const invalidate = useThree((s) => s.invalidate);
+
+  useEffect(() => {
+    let frame = 0;
+    let last = -Infinity;
+    // A hair under the interval, so a monitor running near the cap is not
+    // pushed to alternate between one frame and two.
+    const step = 1000 / fps - 1.5;
+
+    const tick = (now: number) => {
+      if (now - last >= step) {
+        last = now;
+        invalidate();
+      }
+      frame = requestAnimationFrame(tick);
+    };
+
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [fps, invalidate]);
+
+  return null;
+}
+
 export default function BattlefieldApp() {
   const tier = useDeviceTier();
   const [mounted, setMounted] = useState(false);
@@ -79,7 +116,8 @@ export default function BattlefieldApp() {
    * that for a sharpness the antialiasing pass is already providing, which is a
    * bad trade on any screen and a punishing one on a large screen.
    */
-  const dprCeiling = fx === 'off' ? tier.maxDpr : 1;
+  const chainOn = !lowPower && fx !== 'off';
+  const dprCeiling = chainOn ? 1 : tier.maxDpr;
 
   useEffect(() => {
     if (tier.ready) setDpr(Math.min(dprCeiling, tier.maxDpr));
@@ -110,11 +148,15 @@ export default function BattlefieldApp() {
       {mounted && !glError && (
         <Canvas
           className="canvas"
+          // Rendering is driven by FrameLimiter rather than by the display's
+          // refresh rate. See the note there.
+          frameloop="demand"
           shadows={lowPower ? false : 'soft'}
           // The effect chain does its own ACES pass at the end, so the renderer
-          // must not tone map first: doing both crushes the image twice. The
-          // light scene has no chain, so it keeps the renderer's own.
-          flat={!lowPower}
+          // must not tone map first: doing both crushes the image twice. With
+          // no chain there is nothing downstream to do it, so the renderer
+          // keeps its own. This has to follow the chain, not the power mode.
+          flat={chainOn}
           dpr={dpr}
           // Closer than it used to sit: with the scenery gone there is nothing
           // to look at out there, and the armies are the point.
@@ -139,6 +181,7 @@ export default function BattlefieldApp() {
             onDecline={() => setDpr((d) => Math.max(0.7, Math.round((d - 0.25) * 100) / 100))}
             onIncline={() => setDpr((d) => Math.min(dprCeiling, Math.round((d + 0.25) * 100) / 100))}
           />
+          <FrameLimiter fps={60} />
           <Scene lowPower={lowPower} fx={lowPower ? 'off' : fx} />
           {bench && <BenchHandle />}
         </Canvas>

@@ -96,8 +96,8 @@ export function Scene({ lowPower, fx }: { lowPower: boolean; fx: FxLevel }) {
         // 1024 is plenty now that only the units and bases cast: the shadow
         // camera covers the field alone, so texel density is unchanged from the
         // old 2048 map that also had to cover a valley full of trees.
-        shadow-mapSize-width={lowPower ? 512 : 1024}
-        shadow-mapSize-height={lowPower ? 512 : 1024}
+        shadow-mapSize-width={lowPower ? 512 : 768}
+        shadow-mapSize-height={lowPower ? 512 : 768}
         shadow-camera-left={-FIELD_HALF_X - 8}
         shadow-camera-right={FIELD_HALF_X + 8}
         shadow-camera-top={FIELD_HALF_Z + 16}
