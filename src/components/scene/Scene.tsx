@@ -17,6 +17,7 @@ import { Armies } from './Armies';
 import { FrontLine } from './FrontLine';
 import { Combat } from './Combat';
 import { FIELD_HALF_X } from '@/lib/sim/layout';
+import type { FxLevel } from '@/store/battle';
 
 
 /**
@@ -71,7 +72,7 @@ function ShakeGroup({ children }: { children: ReactNode }) {
  * comes from emissive materials and the tinted territory planes instead, which
  * cost nothing per pixel.
  */
-export function Scene({ lowPower }: { lowPower: boolean }) {
+export function Scene({ lowPower, fx }: { lowPower: boolean; fx: FxLevel }) {
   return (
     <>
       {/* Warm daylight haze. With the ridgelines gone the fog *is* the horizon:
@@ -159,7 +160,7 @@ export function Scene({ lowPower }: { lowPower: boolean }) {
       />
 
       {/* Image treatment. Last, because it consumes everything above it. */}
-      <Cinematics lowPower={lowPower} />
+      <Cinematics level={fx} />
     </>
   );
 }

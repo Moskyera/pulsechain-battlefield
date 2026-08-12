@@ -50,6 +50,7 @@ export default function BattlefieldApp() {
 
   const target = useBattleStore((s) => s.target);
   const lowPower = useBattleStore((s) => s.lowPower);
+  const fx = useBattleStore((s) => s.fx);
   const setLowPower = useBattleStore((s) => s.setLowPower);
 
   const [bench, setBench] = useState(false);
@@ -70,9 +71,19 @@ export default function BattlefieldApp() {
     setBench(new URLSearchParams(window.location.search).has('bench'));
   }, []);
 
+  /**
+   * Resolution ceiling.
+   *
+   * The effect chain is per-pixel and the passes stack, so its cost grows with
+   * the square of the window. Rendering above 1:1 while it is running multiplies
+   * that for a sharpness the antialiasing pass is already providing, which is a
+   * bad trade on any screen and a punishing one on a large screen.
+   */
+  const dprCeiling = fx === 'off' ? tier.maxDpr : 1;
+
   useEffect(() => {
-    if (tier.ready) setDpr(Math.min(1.25, tier.maxDpr));
-  }, [tier.ready, tier.maxDpr]);
+    if (tier.ready) setDpr(Math.min(dprCeiling, tier.maxDpr));
+  }, [tier.ready, tier.maxDpr, dprCeiling]);
 
   // Adopt the detected device tier once, as a default the user can override.
   const [tierApplied, setTierApplied] = useState(false);
@@ -126,9 +137,9 @@ export default function BattlefieldApp() {
           <PerformanceMonitor
             factor={0.6}
             onDecline={() => setDpr((d) => Math.max(0.7, Math.round((d - 0.25) * 100) / 100))}
-            onIncline={() => setDpr((d) => Math.min(tier.maxDpr, Math.round((d + 0.25) * 100) / 100))}
+            onIncline={() => setDpr((d) => Math.min(dprCeiling, Math.round((d + 0.25) * 100) / 100))}
           />
-          <Scene lowPower={lowPower} />
+          <Scene lowPower={lowPower} fx={lowPower ? 'off' : fx} />
           {bench && <BenchHandle />}
         </Canvas>
       )}

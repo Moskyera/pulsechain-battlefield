@@ -29,6 +29,23 @@ export const PRESSURE_WINDOW_SEC = 300;
 
 export type BootState = 'idle' | 'resolving' | 'ready' | 'error';
 
+/**
+ * How much image treatment to run.
+ *
+ * These are per-pixel costs, and they scale with the square of the window, so
+ * what is free on one machine is punishing on another with a bigger screen.
+ *
+ *   full  everything, including ambient occlusion. AO is the expensive one:
+ *         it renders the entire scene a second time into a normal buffer
+ *         before it can even start shading.
+ *   lite  bloom, grade, vignette and antialiasing. No second scene pass.
+ *   off   no chain at all, and the renderer does its own tone mapping.
+ *
+ * Default is lite on purpose: the look survives, the second geometry pass
+ * does not.
+ */
+export type FxLevel = 'full' | 'lite' | 'off';
+
 /** One enlisted pool, flattened for display. */
 export interface PoolSummary {
   address: string;
@@ -137,6 +154,8 @@ export interface BattleStore {
   intense: boolean;
   soundEnabled: boolean;
   lowPower: boolean;
+  /** Image treatment level. Forced to 'off' by the light scene. */
+  fx: FxLevel;
   showHud: boolean;
   /** Market feed (the transaction list) can be hidden on its own. */
   showFeed: boolean;
@@ -173,6 +192,7 @@ export interface BattleStore {
   toggleScaleMode: () => void;
   setTierScale: (scale: TierScale) => void;
   setLowPower: (value: boolean) => void;
+  cycleFx: () => void;
 }
 
 /**
@@ -256,6 +276,7 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
   intense: false,
   soundEnabled: false,
   lowPower: false,
+  fx: 'lite',
   showHud: true,
   showFeed: true,
   showPanels: true,
@@ -392,6 +413,11 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
         : { tierScale },
     ),
   setLowPower: (value) => set({ lowPower: value }),
+
+  cycleFx: () =>
+    set((s) => ({
+      fx: s.fx === 'lite' ? 'full' : s.fx === 'full' ? 'off' : 'lite',
+    })),
 }));
 
 /** Recompute the rolling window on a timer so it decays even in a quiet market. */

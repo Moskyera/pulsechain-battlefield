@@ -19,6 +19,8 @@ export function Controls({ compact }: { compact: boolean }) {
   const showFeed = useBattleStore((s) => s.showFeed);
   const showPanels = useBattleStore((s) => s.showPanels);
   const lowPower = useBattleStore((s) => s.lowPower);
+  const fx = useBattleStore((s) => s.fx);
+  const cycleFx = useBattleStore((s) => s.cycleFx);
   const toggleIntense = useBattleStore((s) => s.toggleIntense);
   const toggleSound = useBattleStore((s) => s.toggleSound);
   const toggleHud = useBattleStore((s) => s.toggleHud);
@@ -71,6 +73,22 @@ export function Controls({ compact }: { compact: boolean }) {
         title="Lighter scene: fewer units, no shadows, no starfield. Auto-enabled on small or low-core devices."
       >
         {compact ? '🔋' : lowPower ? '🔋 LIGHT' : '🔋 FULL'}
+      </button>
+
+      {/* Image treatment. Every effect here is per-pixel, so this is the
+          control that actually matters on a big screen. */}
+      <button
+        type="button"
+        className={`ctrl ${fx !== 'off' ? 'on' : ''}`}
+        onClick={cycleFx}
+        disabled={lowPower}
+        title={
+          lowPower
+            ? 'The light scene runs no image effects at all.'
+            : 'Image quality. CINEMATIC adds ambient occlusion, which draws the whole scene a second time and is by far the most expensive thing on screen. FILM keeps the bloom, grade and antialiasing. RAW turns the chain off entirely and renders at full resolution.'
+        }
+      >
+        {compact ? '◐' : fx === 'full' ? '◐ CINEMATIC' : fx === 'lite' ? '◐ FILM' : '◐ RAW'}
       </button>
 
       {/* Hide just the transaction list, keeping the rest of the HUD. */}

@@ -12,6 +12,7 @@ import {
   Vignette,
 } from '@react-three/postprocessing';
 import { BlendFunction, ToneMappingMode } from 'postprocessing';
+import type { FxLevel } from '@/store/battle';
 
 /**
  * The look.
@@ -39,14 +40,15 @@ import { BlendFunction, ToneMappingMode } from 'postprocessing';
  * Cost is real and it is per-pixel, so the whole chain is skipped on the light
  * scene and SSAO, by far the most expensive of them, is dropped first.
  */
-export function Cinematics({ lowPower }: { lowPower: boolean }) {
+export function Cinematics({ level }: { level: FxLevel }) {
   // Rebuilding the chain re-allocates its render targets, so keep it stable.
   const ao = useMemo(
     () => (
       <SSAO
         blendFunction={BlendFunction.MULTIPLY}
-        samples={20}
-        rings={4}
+        samples={12}
+        rings={3}
+        resolutionScale={0.5}
         distanceThreshold={0.35}
         distanceFalloff={0.12}
         rangeThreshold={0.008}
@@ -70,11 +72,15 @@ export function Cinematics({ lowPower }: { lowPower: boolean }) {
    * the grade lifts a little to land back where the scene was before.
    */
 
-  if (lowPower) return null;
+  if (level === 'off') return null;
+
+  // The normal pass exists only to feed ambient occlusion, so it is mounted
+  // with it: without AO there is no reason to draw the scene twice.
+  const withAo = level === 'full';
 
   return (
-    <EffectComposer multisampling={0} enableNormalPass>
-      {ao}
+    <EffectComposer multisampling={0} enableNormalPass={withAo}>
+      {withAo ? ao : <></>}
       <Bloom
         // High enough that the tinted ground and the daylit dirt stay out of
         // it: at 0.72 the whole red half of the field glowed.
