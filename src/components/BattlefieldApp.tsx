@@ -100,6 +100,10 @@ export default function BattlefieldApp() {
         <Canvas
           className="canvas"
           shadows={!lowPower}
+          // The effect chain does its own ACES pass at the end, so the renderer
+          // must not tone map first: doing both crushes the image twice. The
+          // light scene has no chain, so it keeps the renderer's own.
+          flat={!lowPower}
           dpr={dpr}
           // Closer than it used to sit: with the scenery gone there is nothing
           // to look at out there, and the armies are the point.

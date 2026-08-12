@@ -2,12 +2,13 @@
 
 import { useRef, type ReactNode } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
+import { Environment, Lightformer, OrbitControls } from '@react-three/drei';
 import type { Group } from 'three';
 import { runtime } from '@/lib/sim/runtime';
 import { field } from '@/lib/sim/field';
 import { FIELD_HALF_Z } from '@/lib/sim/layout';
 import { Terrain } from './Terrain';
+import { Cinematics } from './Cinematics';
 import { Scars } from './Scars';
 import { Emplacements } from './Emplacements';
 import { Bases } from './Bases';
@@ -105,6 +106,26 @@ export function Scene({ lowPower }: { lowPower: boolean }) {
       />
       <directionalLight position={[30, 18, -26]} intensity={0.55} color="#9fc4ff" />
 
+      {/* Environment light, built in the browser rather than downloaded.
+          Three panels stand in for a sky: a warm sun side, a cool opposite, and
+          the ground bouncing light back up. Direct lights alone can only make
+          metal brighter or darker, never reflective, so armour read as painted
+          cardboard; this is what gives it something to reflect. Rendered once
+          at 128px, so it costs nothing per frame. */}
+      {!lowPower && (
+        <Environment resolution={128} frames={1}>
+          <Lightformer intensity={2.4} color="#fff1d8" position={[-14, 14, 8]} scale={[14, 14, 1]} />
+          <Lightformer intensity={0.8} color="#a8c8ff" position={[14, 9, -10]} scale={[16, 10, 1]} />
+          <Lightformer
+            intensity={0.55}
+            color="#c6bca6"
+            position={[0, -8, 0]}
+            scale={[26, 26, 1]}
+            rotation-x={Math.PI / 2}
+          />
+        </Environment>
+      )}
+
       <ShakeGroup>
         <Terrain lowPower={lowPower} />
         <Scars lowPower={lowPower} />
@@ -128,6 +149,9 @@ export function Scene({ lowPower }: { lowPower: boolean }) {
         rotateSpeed={0.6}
         zoomSpeed={0.8}
       />
+
+      {/* Image treatment. Last, because it consumes everything above it. */}
+      <Cinematics lowPower={lowPower} />
     </>
   );
 }

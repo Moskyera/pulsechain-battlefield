@@ -379,8 +379,9 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
       map={cloth}
       emissive={color}
       emissiveIntensity={0.035}
-      roughness={0.82}
-      metalness={0.08}
+      roughness={0.78}
+      metalness={0.12}
+      envMapIntensity={0.35}
     />
   );
 

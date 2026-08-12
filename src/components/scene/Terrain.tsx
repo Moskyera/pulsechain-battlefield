@@ -155,12 +155,14 @@ export function Terrain({ lowPower }: { lowPower: boolean }) {
       </mesh>
 
       {/* Held territory. Unit-width planes scaled on X each frame, carrying
-          their own alpha falloff so they fade out instead of stopping dead. */}
+          their own alpha falloff so they fade out instead of stopping dead.
+          Kept faint: the colour grade downstream lifts saturation, and at the
+          old strength the two halves read as sheets of neon paint. */}
       <mesh ref={greenRef} geometry={influence} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-        <meshBasicMaterial color={COLORS.buy} vertexColors transparent opacity={0.32} depthWrite={false} />
+        <meshBasicMaterial color={COLORS.buy} vertexColors transparent opacity={0.17} depthWrite={false} />
       </mesh>
       <mesh ref={redRef} geometry={influence} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-        <meshBasicMaterial color={COLORS.sell} vertexColors transparent opacity={0.32} depthWrite={false} />
+        <meshBasicMaterial color={COLORS.sell} vertexColors transparent opacity={0.17} depthWrite={false} />
       </mesh>
     </group>
   );

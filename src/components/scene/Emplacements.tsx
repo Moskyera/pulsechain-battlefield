@@ -168,8 +168,9 @@ export function Emplacements({ lowPower }: { lowPower: boolean }) {
       map={plating}
       emissive={color}
       emissiveIntensity={0.03}
-      roughness={0.78}
-      metalness={0.28}
+      roughness={0.62}
+      metalness={0.45}
+      envMapIntensity={0.55}
     />
   );
 
