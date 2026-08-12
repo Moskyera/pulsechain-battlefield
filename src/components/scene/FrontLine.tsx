@@ -42,14 +42,14 @@ interface Section {
   tilt: number;
 }
 
-export function FrontLine() {
+export function FrontLine({ plain = false }: { plain?: boolean }) {
   const groupRef = useRef<Group>(null);
   const bagsRef = useRef<InstancedMesh>(null);
   const spoilRef = useRef<InstancedMesh>(null);
   const stakesRef = useRef<InstancedMesh>(null);
   const glowRef = useRef<Mesh>(null);
   const dummy = useMemo(() => new Object3D(), []);
-  const sacking = useMemo(() => sackNormal(), []);
+  const sacking = useMemo(() => (plain ? null : sackNormal()), [plain]);
 
   /**
    * The shape of the works, hashed once. A perfectly straight parapet is the
@@ -153,7 +153,7 @@ export function FrontLine() {
         <boxGeometry args={[1, 1, 1]} />
         <meshStandardMaterial
           color="#57503f"
-          normalMap={sacking}
+          normalMap={sacking ?? undefined}
           normalScale={[1.1, 1.1]}
           roughness={0.98}
         />

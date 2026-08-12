@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
-import { PerformanceMonitor } from '@react-three/drei';
 import { Scene } from './scene/Scene';
 import { Hud } from './hud/Hud';
 import { useDeviceTier } from '@/hooks/useDeviceTier';
@@ -152,6 +151,7 @@ export default function BattlefieldApp() {
    * machine is struggling; it can no longer go above.
    */
   const dprCeiling = 1;
+  void dprCeiling;
 
   useEffect(() => {
     if (tier.ready) setDpr(Math.min(dprCeiling, tier.maxDpr));
@@ -208,16 +208,9 @@ export default function BattlefieldApp() {
             });
           }}
         >
-          {/* Trades resolution for frame rate, in both directions: drop when
-              frames are being missed, climb back once there is headroom. */}
-          <PerformanceMonitor
-            factor={0.6}
-            onDecline={() => setDpr((d) => Math.max(0.7, Math.round((d - 0.25) * 100) / 100))}
-            onIncline={() => setDpr((d) => Math.min(dprCeiling, Math.round((d + 0.25) * 100) / 100))}
-            // Nothing to climb to: the ceiling is 1:1.
-          />
           <FrameLimiter
-            fps={60}
+            // Half the frames is half the work, and nothing here is a shooter.
+            fps={chainOn ? 45 : 30}
             onSample={(f) => {
               setRenderFps(f);
               const c = document.querySelector('canvas');

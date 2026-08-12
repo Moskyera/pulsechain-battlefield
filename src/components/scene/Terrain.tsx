@@ -54,7 +54,9 @@ export function Terrain({ lowPower }: { lowPower: boolean }) {
     return g;
   }, []);
   const dirt = useMemo(() => groundTexture(lowPower ? 60 : 110), [lowPower]);
-  const dirtRelief = useMemo(() => groundNormal(lowPower ? 60 : 110), [lowPower]);
+  // Skipped on the plain scene: relief costs a fetch and a basis rebuild on
+  // every lit pixel, and the ground is the largest surface on screen.
+  const dirtRelief = useMemo(() => (lowPower ? null : groundNormal(110)), [lowPower]);
 
   /**
    * Mottled, gently displaced terrain. Built once.
@@ -155,7 +157,7 @@ export function Terrain({ lowPower }: { lowPower: boolean }) {
         <meshStandardMaterial
           vertexColors
           map={dirt}
-          normalMap={dirtRelief}
+          normalMap={dirtRelief ?? undefined}
           normalScale={[0.85, 0.85]}
           roughness={1}
           metalness={0}

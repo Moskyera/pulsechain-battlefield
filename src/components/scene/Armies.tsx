@@ -295,7 +295,7 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
   const greenLeg = useMemo(() => legGeometry(KIT_BUY), []);
   const redLeg = useMemo(() => legGeometry(KIT_SELL), []);
   const cloth = useMemo(() => troopTexture(), []);
-  const clothRelief = useMemo(() => troopNormal(), []);
+  const clothRelief = useMemo(() => (lowPower ? null : troopNormal()), [lowPower]);
   const capacity = lowPower ? MAX_UNITS_LOW : MAX_UNITS_HIGH;
 
   const seed = useBattleStore((s) => targetKey(s.target));
@@ -378,7 +378,7 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
     <meshStandardMaterial
       vertexColors
       map={cloth}
-      normalMap={clothRelief}
+      normalMap={clothRelief ?? undefined}
       normalScale={[0.45, 0.45]}
       emissive={color}
       emissiveIntensity={0.035}

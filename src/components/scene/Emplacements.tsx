@@ -93,7 +93,7 @@ export function Emplacements({ lowPower }: { lowPower: boolean }) {
   const buyLauncher = useMemo(() => launcherGeometry(KIT_BUY), []);
   const sellLauncher = useMemo(() => launcherGeometry(KIT_SELL), []);
   const plating = useMemo(() => armourTexture(), []);
-  const plateRelief = useMemo(() => armourNormal(), []);
+  const plateRelief = useMemo(() => (lowPower ? null : armourNormal()), [lowPower]);
   const buyJitter = useMemo(() => batteryJitter('emp-g'), []);
   const sellJitter = useMemo(() => batteryJitter('emp-r'), []);
 
@@ -167,7 +167,7 @@ export function Emplacements({ lowPower }: { lowPower: boolean }) {
     <meshStandardMaterial
       vertexColors
       map={plating}
-      normalMap={plateRelief}
+      normalMap={plateRelief ?? undefined}
       normalScale={[0.7, 0.7]}
       emissive={color}
       emissiveIntensity={0.03}

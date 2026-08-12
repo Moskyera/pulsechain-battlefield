@@ -73,9 +73,16 @@ function ShakeGroup({ children }: { children: ReactNode }) {
  * cost nothing per pixel.
  */
 export function Scene({ lowPower, fx }: { lowPower: boolean; fx: FxLevel }) {
-  // Casting has to match the renderer, or every caster pays for a shadow map
-  // that is never sampled.
-  const shadows = !lowPower && fx !== 'off';
+  /**
+   * The plain scene.
+   *
+   * No shadow pass, no environment map, no surface relief, no effect chain: a
+   * lit scene of solid shapes and nothing else. This is the default, because
+   * the extras are all per-pixel or per-object costs that a large window
+   * multiplies, and the battle reads perfectly well without any of them.
+   */
+  const plain = lowPower || fx === 'off';
+  const shadows = !plain;
   return (
     <>
       {/* Warm daylight haze. With the ridgelines gone the fog *is* the horizon:
@@ -143,7 +150,7 @@ export function Scene({ lowPower, fx }: { lowPower: boolean; fx: FxLevel }) {
         <Bases lowPower={lowPower || !shadows} />
         <Emplacements lowPower={lowPower || !shadows} />
         <Armies lowPower={lowPower || !shadows} />
-        <FrontLine />
+        <FrontLine plain={plain} />
         <Combat lowPower={lowPower || !shadows} />
         <Smoke lowPower={lowPower || !shadows} />
       </ShakeGroup>
