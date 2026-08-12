@@ -6,7 +6,7 @@ import { Color, Object3D, type InstancedMesh } from 'three';
 import { field } from '@/lib/sim/field';
 import { drainBlasts, recordBlast, runtime } from '@/lib/sim/runtime';
 import { KIT_BUY, KIT_SELL, launcherGeometry, tankGeometry } from '@/lib/sim/geometry';
-import { armourTexture } from '@/lib/sim/textures';
+import { armourNormal, armourTexture } from '@/lib/sim/textures';
 import { hashSigned, hashUnit } from '@/lib/util/hash';
 import { BATTERY, LAUNCHER_INDICES, TANK_INDICES, batteryPlacement } from '@/lib/sim/battery';
 import { COLORS } from '@/lib/sim/layout';
@@ -93,6 +93,7 @@ export function Emplacements({ lowPower }: { lowPower: boolean }) {
   const buyLauncher = useMemo(() => launcherGeometry(KIT_BUY), []);
   const sellLauncher = useMemo(() => launcherGeometry(KIT_SELL), []);
   const plating = useMemo(() => armourTexture(), []);
+  const plateRelief = useMemo(() => armourNormal(), []);
   const buyJitter = useMemo(() => batteryJitter('emp-g'), []);
   const sellJitter = useMemo(() => batteryJitter('emp-r'), []);
 
@@ -166,6 +167,8 @@ export function Emplacements({ lowPower }: { lowPower: boolean }) {
     <meshStandardMaterial
       vertexColors
       map={plating}
+      normalMap={plateRelief}
+      normalScale={[0.7, 0.7]}
       emissive={color}
       emissiveIntensity={0.03}
       roughness={0.62}

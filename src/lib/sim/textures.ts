@@ -130,6 +130,181 @@ export function detailTexture(key: string, seed: number, opts: DetailOptions = {
   return tex;
 }
 
+/* ------------------------------------------------------------------ relief */
+
+/**
+ * Seamless value noise on a periodic lattice.
+ *
+ * The lattice wraps, so the field tiles exactly: without that every surface
+ * shows a grid of seams once the texture repeats, which on the terrain would be
+ * ninety times across.
+ */
+function valueNoise(size: number, cells: number, seed: number): Float32Array {
+  const rnd = lcg(seed);
+  const lattice = new Float32Array(cells * cells);
+  for (let i = 0; i < lattice.length; i++) lattice[i] = rnd();
+
+  const out = new Float32Array(size * size);
+  const scale = cells / size;
+  const smooth = (t: number) => t * t * (3 - 2 * t);
+
+  for (let y = 0; y < size; y++) {
+    const fy = y * scale;
+    const y0 = Math.floor(fy);
+    const ty = smooth(fy - y0);
+    for (let x = 0; x < size; x++) {
+      const fx = x * scale;
+      const x0 = Math.floor(fx);
+      const tx = smooth(fx - x0);
+
+      const x1 = (x0 + 1) % cells;
+      const y1 = (y0 + 1) % cells;
+      const a = lattice[(y0 % cells) * cells + (x0 % cells)];
+      const b = lattice[(y0 % cells) * cells + x1];
+      const c = lattice[y1 * cells + (x0 % cells)];
+      const d = lattice[y1 * cells + x1];
+
+      out[y * size + x] = (a + (b - a) * tx) * (1 - ty) + (c + (d - c) * tx) * ty;
+    }
+  }
+  return out;
+}
+
+interface ReliefOptions {
+  size?: number;
+  /** Lattice sizes to sum, coarse first. Each must divide the canvas cleanly. */
+  octaves?: number[];
+  /** How pronounced the slopes are. */
+  strength?: number;
+  /** Adds a woven cross-hatch on top, for cloth. */
+  weave?: number;
+}
+
+const normalCache = new Map<string, Texture>();
+
+/**
+ * A tangent-space normal map, derived from a procedural height field.
+ *
+ * Flat colour is what makes a surface read as a polygon rather than a material:
+ * with no relief, a lit plane is a single flat wash however good the light is.
+ * This gives every surface slopes to catch that light, which is the difference
+ * between painted ground and ground made of grit.
+ *
+ * Heights are converted with a Sobel difference and encoded the usual way, and
+ * the texture is deliberately left in linear space: a normal map holds
+ * directions, not colour, so running it through sRGB would bend every vector.
+ */
+export function reliefTexture(key: string, seed: number, opts: ReliefOptions = {}): Texture | null {
+  if (typeof document === 'undefined') return null;
+
+  const cached = normalCache.get(key);
+  if (cached) return cached;
+
+  const size = opts.size ?? 256;
+  const octaves = opts.octaves ?? [8, 32, 128];
+  const strength = opts.strength ?? 2.2;
+  const weave = opts.weave ?? 0;
+
+  // Build the height field: coarse shapes first, finer detail at lower weight.
+  const height = new Float32Array(size * size);
+  let amplitude = 1;
+  let total = 0;
+  for (let o = 0; o < octaves.length; o++) {
+    const layer = valueNoise(size, Math.min(octaves[o], size), seed + o * 7919);
+    for (let i = 0; i < height.length; i++) height[i] += layer[i] * amplitude;
+    total += amplitude;
+    amplitude *= 0.55;
+  }
+  for (let i = 0; i < height.length; i++) height[i] /= total;
+
+  if (weave > 0) {
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const w =
+          Math.sin((x / size) * Math.PI * 2 * 24) * Math.sin((y / size) * Math.PI * 2 * 24);
+        height[y * size + x] += w * weave;
+      }
+    }
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  const img = ctx.createImageData(size, size);
+  const d = img.data;
+  const at = (x: number, y: number) => height[((y + size) % size) * size + ((x + size) % size)];
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = (at(x + 1, y) - at(x - 1, y)) * strength;
+      const dy = (at(x, y + 1) - at(x, y - 1)) * strength;
+      const len = Math.hypot(dx, dy, 1);
+      const i = (y * size + x) * 4;
+      d[i] = ((-dx / len) * 0.5 + 0.5) * 255;
+      d[i + 1] = ((-dy / len) * 0.5 + 0.5) * 255;
+      d[i + 2] = (1 / len) * 0.5 * 255 + 127.5;
+      d[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+
+  const tex = new CanvasTexture(canvas);
+  tex.wrapS = RepeatWrapping;
+  tex.wrapT = RepeatWrapping;
+  tex.anisotropy = 4;
+  normalCache.set(key, tex);
+  return tex;
+}
+
+/** Grit and clods for the ground. Tiled at the same rate as its detail map. */
+export function groundNormal(repeat = 90): Texture | null {
+  const tex = reliefTexture('ground-relief', 0x9d31f7, {
+    size: 256,
+    octaves: [8, 32, 128],
+    strength: 3.4,
+  });
+  if (tex) tex.repeat.set(repeat, repeat * 0.8);
+  return tex;
+}
+
+/** Rolled plate, dents and weld seams. */
+export function armourNormal(): Texture | null {
+  const tex = reliefTexture('armour-relief', 0x4417ab, {
+    size: 256,
+    octaves: [4, 16, 64],
+    strength: 2.1,
+  });
+  if (tex) tex.repeat.set(3, 3);
+  return tex;
+}
+
+/** Coarse woven cloth. */
+export function troopNormal(): Texture | null {
+  const tex = reliefTexture('troop-relief', 0x1f77b4, {
+    size: 128,
+    octaves: [8, 32],
+    strength: 1.5,
+    weave: 0.16,
+  });
+  if (tex) tex.repeat.set(2, 2);
+  return tex;
+}
+
+/** Hessian sacking for the parapet. */
+export function sackNormal(): Texture | null {
+  const tex = reliefTexture('sack-relief', 0x6ab04c, {
+    size: 128,
+    octaves: [4, 16, 64],
+    strength: 2.6,
+    weave: 0.22,
+  });
+  if (tex) tex.repeat.set(1.6, 1.6);
+  return tex;
+}
+
 /**
  * Gravel and scuff for the terrain. Tiled hard, so the ground reads as a
  * surface rather than a flat-shaded polygon at any zoom.

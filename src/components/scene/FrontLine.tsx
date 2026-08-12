@@ -6,6 +6,7 @@ import { AdditiveBlending, Object3D, type Group, type InstancedMesh, type Mesh, 
 import { runtime } from '@/lib/sim/runtime';
 import { field } from '@/lib/sim/field';
 import { hashSigned, hashUnit } from '@/lib/util/hash';
+import { sackNormal } from '@/lib/sim/textures';
 import { COLORS, FIELD_HALF_Z, frontLineToX } from '@/lib/sim/layout';
 
 /**
@@ -48,6 +49,7 @@ export function FrontLine() {
   const stakesRef = useRef<InstancedMesh>(null);
   const glowRef = useRef<Mesh>(null);
   const dummy = useMemo(() => new Object3D(), []);
+  const sacking = useMemo(() => sackNormal(), []);
 
   /**
    * The shape of the works, hashed once. A perfectly straight parapet is the
@@ -149,7 +151,12 @@ export function FrontLine() {
       {/* Sandbag parapet */}
       <instancedMesh ref={bagsRef} args={[undefined, undefined, BAG_COUNT]} frustumCulled={false} castShadow receiveShadow>
         <boxGeometry args={[1, 1, 1]} />
-        <meshStandardMaterial color="#57503f" roughness={0.98} />
+        <meshStandardMaterial
+          color="#57503f"
+          normalMap={sacking}
+          normalScale={[1.1, 1.1]}
+          roughness={0.98}
+        />
       </instancedMesh>
 
       {/* Spoil heaped behind the parapet */}

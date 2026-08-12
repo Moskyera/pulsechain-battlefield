@@ -7,7 +7,7 @@ import { field } from '@/lib/sim/field';
 import { drainBlasts, runtime } from '@/lib/sim/runtime';
 import { KIT_BUY, KIT_SELL, legGeometry, soldierGeometry } from '@/lib/sim/geometry';
 import type { Side } from '@/lib/data/types';
-import { troopTexture } from '@/lib/sim/textures';
+import { troopNormal, troopTexture } from '@/lib/sim/textures';
 import { targetKey, useBattleStore } from '@/store/battle';
 import { hashSigned, hashUnit, hashUnitSalted } from '@/lib/util/hash';
 import { COLORS, FIELD_HALF_Z, GREEN_BASE_X, RED_BASE_X, frontLineToX } from '@/lib/sim/layout';
@@ -295,6 +295,7 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
   const greenLeg = useMemo(() => legGeometry(KIT_BUY), []);
   const redLeg = useMemo(() => legGeometry(KIT_SELL), []);
   const cloth = useMemo(() => troopTexture(), []);
+  const clothRelief = useMemo(() => troopNormal(), []);
   const capacity = lowPower ? MAX_UNITS_LOW : MAX_UNITS_HIGH;
 
   const seed = useBattleStore((s) => targetKey(s.target));
@@ -377,6 +378,8 @@ export function Armies({ lowPower }: { lowPower: boolean }) {
     <meshStandardMaterial
       vertexColors
       map={cloth}
+      normalMap={clothRelief}
+      normalScale={[0.45, 0.45]}
       emissive={color}
       emissiveIntensity={0.035}
       roughness={0.78}

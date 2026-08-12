@@ -5,7 +5,7 @@ import { useFrame } from '@react-three/fiber';
 import { BufferAttribute, Color, PlaneGeometry, type Mesh } from 'three';
 import { runtime } from '@/lib/sim/runtime';
 import { COLORS, FIELD_HALF_X, FIELD_HALF_Z, frontLineToX } from '@/lib/sim/layout';
-import { groundTexture } from '@/lib/sim/textures';
+import { groundNormal, groundTexture } from '@/lib/sim/textures';
 
 /**
  * The ground, and the territory each side currently holds.
@@ -54,6 +54,7 @@ export function Terrain({ lowPower }: { lowPower: boolean }) {
     return g;
   }, []);
   const dirt = useMemo(() => groundTexture(lowPower ? 60 : 110), [lowPower]);
+  const dirtRelief = useMemo(() => groundNormal(lowPower ? 60 : 110), [lowPower]);
 
   /**
    * Mottled, gently displaced terrain. Built once.
@@ -151,7 +152,14 @@ export function Terrain({ lowPower }: { lowPower: boolean }) {
       <mesh geometry={ground} position={[0, -0.02, 0]} receiveShadow={!lowPower}>
         {/* Vertex colours carry the large-scale terrain; the tiled detail map
             supplies gravel and scuff so it holds up at close zoom. */}
-        <meshStandardMaterial vertexColors map={dirt} roughness={1} metalness={0} />
+        <meshStandardMaterial
+          vertexColors
+          map={dirt}
+          normalMap={dirtRelief}
+          normalScale={[0.85, 0.85]}
+          roughness={1}
+          metalness={0}
+        />
       </mesh>
 
       {/* Held territory. Unit-width planes scaled on X each frame, carrying
